@@ -286,7 +286,18 @@ pending → processing → reviewing → processing → ready
 
 **사전 요건**
 - Docker · Docker Compose.
-- 프로젝트 루트의 `.env` 파일에 `OPENAI_API_KEY` 설정(샘플은 `env.example.txt`).
+- 프로젝트 루트의 `.env` 파일에 환경변수 설정(샘플은 `env.example.txt`). 민감 정보가 모두 `.env`로 분리돼 있어 저장소 코드에는 하드코딩된 비밀값이 없음.
+
+**필요한 환경변수**
+
+| 변수 | 용도 | 비고 |
+|---|---|---|
+| `DJANGO_SECRET_KEY` | Django 세션·CSRF 서명 키 | `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`로 생성 |
+| `POSTGRES_USER` | DB 사용자명 | 로컬 기본 `postgres` |
+| `POSTGRES_PASSWORD` | DB 비밀번호 | **운영 시 반드시 강력한 값으로 교체** |
+| `POSTGRES_DB` | DB 이름 | 로컬 기본 `mydb` |
+| `OPENAI_API_KEY` | OpenAI API 키 | `sk-proj-...` 형식 |
+| `OPENAI_MODEL` | 사용 모델 | 기본 `gpt-4o-mini` |
 
 **실행**
 - `docker compose up -d` — web(Django, 8001) + db(PostgreSQL 17, 5432) 컨테이너 기동.
@@ -294,10 +305,11 @@ pending → processing → reviewing → processing → ready
 - 브라우저에서 `http://localhost:8001/` — 채팅 화면, `http://localhost:8001/bo/` — 백오피스.
 
 **최초 셋업 체크리스트**
-1. `env.example.txt`을 `.env`로 복사 후 `OPENAI_API_KEY`를 실제 키로 채움.
-2. `docker compose up -d` → 컨테이너 기동, 마이그레이션 실행.
-3. (선택) 챗봇 아이콘 이미지를 `resources/icon/icon.png`에 배치.
-4. BO 파일관리에서 회사 문서 업로드 시작.
+1. `env.example.txt`을 `.env`로 복사.
+2. `.env`의 각 값을 채움 (`DJANGO_SECRET_KEY` 생성, `POSTGRES_PASSWORD` 설정, `OPENAI_API_KEY` 발급 후 입력).
+3. `docker compose up -d` → 컨테이너 기동, 마이그레이션 실행.
+4. (선택) 챗봇 아이콘 이미지를 `resources/icon/icon.png`에 배치.
+5. BO 파일관리에서 회사 문서 업로드 시작.
 
 **주요 디렉토리**
 - `chat/`, `files/`, `bo/`, `AI_Chat/` — Django 앱·설정.
@@ -347,22 +359,22 @@ resources/
 
 DB는 Docker Compose가 자동으로 기동·연결하므로 **기본 사용엔 직접 접속 불필요**합니다. 다만 DataGrip 같은 GUI 툴이나 `psql`로 직접 접속·디버깅하고 싶을 때 참고.
 
-**접속 정보 (로컬 기본값)**
+**접속 정보**
 
 | 항목 | 값 |
 |---|---|
 | Host | `localhost` (같은 머신) 또는 LAN IP (다른 PC에서) |
 | Port | `5432` |
-| Database | `mydb` |
-| User | `postgres` |
-| Password | `password` |
-| JDBC URL | `jdbc:postgresql://localhost:5432/mydb` |
+| Database | `.env`의 `POSTGRES_DB` |
+| User | `.env`의 `POSTGRES_USER` |
+| Password | `.env`의 `POSTGRES_PASSWORD` |
+| JDBC URL | `jdbc:postgresql://localhost:5432/<POSTGRES_DB>` |
 
-이 정보는 `docker-compose.yml`의 `db` 서비스 환경변수에 정의되어 있으며, 운영 환경에서는 반드시 **변경 후 `.env` 등으로 분리 관리**할 것.
+접속 값은 전부 `.env`에서 읽어 오도록 `docker-compose.yml`이 `${POSTGRES_USER}` 등 변수 치환으로 구성되어 있음. 저장소 코드에는 비밀 값이 남지 않음.
 
 **CLI로 접속**
-- 컨테이너 내부에서: `docker compose exec db psql -U postgres -d mydb`
-- 호스트에 psql 설치되어 있으면: `psql -h localhost -p 5432 -U postgres -d mydb`
+- 컨테이너 내부에서: `docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB` (또는 `.env` 값 직접 기입)
+- 호스트에 psql 설치되어 있으면: `psql -h localhost -p 5432 -U <user> -d <db>`
 
 **pgvector 확장**
 - 첫 마이그레이션 시 `VectorExtension()`이 자동으로 `CREATE EXTENSION vector`를 수행.
