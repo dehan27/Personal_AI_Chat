@@ -7,17 +7,22 @@
               실패 시 pdfplumber 폴백(표 마크다운 변환 지원).
               그래도 실패하면 pypdf 최후 폴백.
 - .docx     : python-docx로 문단 + 표 모두 추출.
+- .xlsx/.xlsm : openpyxl로 시트별 마크다운 변환(병합 셀·수식 캐시값 포함).
+- .xls    : xlrd로 레거시 엑셀 시트별 마크다운 변환.
 
 표는 마크다운 형식( | col | col | )으로 변환해서 본문에 끼워넣는다.
 LLM이 마크다운 표를 자연스럽게 이해하므로 RAG 검색 품질이 향상된다.
 """
 
+import datetime
 import logging
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 import fitz  # PyMuPDF
+import openpyxl
 import pdfplumber
+import xlrd
 from pypdf import PdfReader
 from docx import Document as DocxDocument
 
@@ -43,6 +48,10 @@ def extract_text(file_obj, original_name: str) -> str:
         text = _extract_pdf(file_obj)
     elif ext == '.docx':
         text = _extract_docx(file_obj)
+    elif ext in ('.xlsx', '.xlsm'):
+        text = _extract_xlsx(file_obj)
+    elif ext == '.xls':
+        text = _extract_xls(file_obj)
     else:
         raise UnsupportedFileType(f'지원하지 않는 확장자: {ext}')
 
@@ -173,6 +182,183 @@ def _extract_docx(file_obj) -> str:
     parts.extend(table_markdowns)
 
     return '\n\n'.join(parts)
+
+
+# ----------------------------------------------------------------------------
+# XLSX / XLSM — openpyxl (수식 캐시값 + 병합 셀 복제)
+# ----------------------------------------------------------------------------
+
+# 시트당 처리할 최대 행 수 (초과분은 경고 + 절단)
+XLSX_MAX_ROWS_PER_SHEET = 10_000
+
+
+def _extract_xlsx(file_obj) -> str:
+    """XLSX/XLSM 워크북을 시트별 마크다운 섹션으로 변환."""
+    file_obj.seek(0)
+    wb = openpyxl.load_workbook(file_obj, data_only=True, read_only=False)
+    sections: List[str] = []
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        if ws.sheet_state != 'visible':
+            continue
+
+        rows = _xlsx_rows_with_merged(ws)
+        truncated = False
+        if len(rows) > XLSX_MAX_ROWS_PER_SHEET:
+            logger.warning(
+                'XLSX 시트 %r: %d행 중 앞 %d행만 추출',
+                sheet_name, len(rows), XLSX_MAX_ROWS_PER_SHEET,
+            )
+            rows = rows[:XLSX_MAX_ROWS_PER_SHEET]
+            truncated = True
+
+        # 빈 행 제거 (마지막에 남아있는 완전 빈 행)
+        rows = [r for r in rows if any(cell != '' for cell in r)]
+        if not rows:
+            continue
+
+        md = _table_to_markdown(rows)
+        if not md:
+            continue
+
+        header = f'## {sheet_name}'
+        if truncated:
+            header += f' (앞 {XLSX_MAX_ROWS_PER_SHEET}행만 포함)'
+        sections.append(f'{header}\n\n{md}')
+
+    wb.close()
+    return '\n\n'.join(sections)
+
+
+def _xlsx_rows_with_merged(ws) -> List[List[str]]:
+    """openpyxl 워크시트를 2D 문자열 리스트로.
+
+    병합 셀의 경우 좌상단 값만 들어있고 나머지는 None이므로,
+    병합 범위 전체에 같은 값을 복제해서 의미 유지.
+    """
+    # 병합 셀 맵 구성: (row, col) → 좌상단 값
+    merged_map: dict = {}
+    for merged_range in list(ws.merged_cells.ranges):
+        min_row, min_col = merged_range.min_row, merged_range.min_col
+        max_row, max_col = merged_range.max_row, merged_range.max_col
+        top_left = ws.cell(row=min_row, column=min_col).value
+        for r in range(min_row, max_row + 1):
+            for c in range(min_col, max_col + 1):
+                merged_map[(r, c)] = top_left
+
+    rows: List[List[str]] = []
+    for row_idx, row in enumerate(ws.iter_rows(), start=1):
+        cells: List[str] = []
+        for cell in row:
+            if (cell.row, cell.column) in merged_map:
+                value = merged_map[(cell.row, cell.column)]
+            else:
+                value = cell.value
+            cells.append(_format_cell_value(value))
+        rows.append(cells)
+    return rows
+
+
+# ----------------------------------------------------------------------------
+# XLS — xlrd (레거시 포맷)
+# ----------------------------------------------------------------------------
+
+def _extract_xls(file_obj) -> str:
+    """XLS (레거시) 워크북을 시트별 마크다운 섹션으로 변환."""
+    file_obj.seek(0)
+    data = file_obj.read()
+    book = xlrd.open_workbook(file_contents=data, formatting_info=True)
+    sections: List[str] = []
+
+    for sheet_idx in range(book.nsheets):
+        sheet = book.sheet_by_index(sheet_idx)
+        if getattr(sheet, 'visibility', 0) != 0:
+            # 0 = visible, 1 = hidden, 2 = very hidden
+            continue
+
+        # 병합 셀 처리
+        merged_map: dict = {}
+        for (rlo, rhi, clo, chi) in sheet.merged_cells:
+            top_left = sheet.cell(rlo, clo)
+            top_left_val = _xls_cell_value(top_left, book)
+            for r in range(rlo, rhi):
+                for c in range(clo, chi):
+                    merged_map[(r, c)] = top_left_val
+
+        n_rows = sheet.nrows
+        truncated = False
+        if n_rows > XLSX_MAX_ROWS_PER_SHEET:
+            logger.warning(
+                'XLS 시트 %r: %d행 중 앞 %d행만 추출',
+                sheet.name, n_rows, XLSX_MAX_ROWS_PER_SHEET,
+            )
+            n_rows = XLSX_MAX_ROWS_PER_SHEET
+            truncated = True
+
+        rows: List[List[str]] = []
+        for r in range(n_rows):
+            cells: List[str] = []
+            for c in range(sheet.ncols):
+                if (r, c) in merged_map:
+                    cells.append(_format_cell_value(merged_map[(r, c)]))
+                else:
+                    cells.append(_format_cell_value(_xls_cell_value(sheet.cell(r, c), book)))
+            rows.append(cells)
+
+        rows = [r for r in rows if any(cell != '' for cell in r)]
+        if not rows:
+            continue
+
+        md = _table_to_markdown(rows)
+        if not md:
+            continue
+
+        header = f'## {sheet.name}'
+        if truncated:
+            header += f' (앞 {XLSX_MAX_ROWS_PER_SHEET}행만 포함)'
+        sections.append(f'{header}\n\n{md}')
+
+    return '\n\n'.join(sections)
+
+
+def _xls_cell_value(cell, book) -> Any:
+    """xlrd 셀의 타입별 원시값을 파이썬 네이티브 타입으로 변환."""
+    if cell.ctype == xlrd.XL_CELL_DATE:
+        # xldate를 datetime으로
+        try:
+            return xlrd.xldate.xldate_as_datetime(cell.value, book.datemode)
+        except Exception:
+            return cell.value
+    if cell.ctype == xlrd.XL_CELL_BOOLEAN:
+        return bool(cell.value)
+    if cell.ctype == xlrd.XL_CELL_EMPTY:
+        return None
+    return cell.value
+
+
+# ----------------------------------------------------------------------------
+# 셀 값 포맷 공용 (xlsx/xls 공통)
+# ----------------------------------------------------------------------------
+
+def _format_cell_value(value) -> str:
+    """셀 값을 사람·LLM 친화적인 문자열로 변환."""
+    if value is None:
+        return ''
+    if isinstance(value, datetime.datetime):
+        # 시간 정보가 의미 없으면 날짜만
+        if value.hour == 0 and value.minute == 0 and value.second == 0:
+            return value.strftime('%Y-%m-%d')
+        return value.strftime('%Y-%m-%d %H:%M:%S')
+    if isinstance(value, datetime.date):
+        return value.strftime('%Y-%m-%d')
+    if isinstance(value, float):
+        # 정수값이면 정수로 (예: 5.0 → 5)
+        if value.is_integer():
+            return str(int(value))
+        # 소수점은 그대로
+        return f'{value:g}'
+    return str(value).strip()
 
 
 # ----------------------------------------------------------------------------
