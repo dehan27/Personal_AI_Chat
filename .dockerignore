@@ -1,0 +1,59 @@
+# Docker 빌드 컨텍스트에서 제외할 것들.
+# 포함되면: 이미지 크기 증가, 민감 정보 유출, 빌드 캐시 무효화 위험.
+
+# ── 민감 정보 (절대 금지) ──────────────────
+.env
+.env.*
+!.env.example
+!env.example.txt
+!env.prod.example.txt
+*.key
+*.pem
+secrets/
+
+# ── VCS / 에디터 ────────────────────────
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── 파이썬 캐시/가상환경 ───────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ── OS 아티팩트 ────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Django 런타임 산출물 (이미지 안에서 다시 생성/볼륨 바인드) ──
+staticfiles/
+media/
+resources/
+db.sqlite3
+
+# ── 문서·로컬 설정 (이미지와 무관) ───────────
+README.md
+git-flow.md
+*.md
+.github/
+docs/
+
+# ── 도커 관련 (자기 자신은 포함되되 dev 전용은 제외) ──
+docker-compose.yml
+Dockerfile
+# Dockerfile.prod 과 docker-compose.prod.yml 은 빌드엔 불필요하지만 포함돼도 무해.
+
+# ── 로그 ────────────────────────────
+*.log
+logs/

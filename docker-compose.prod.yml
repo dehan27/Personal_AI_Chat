@@ -1,0 +1,52 @@
+# 프로덕션 컴포즈.
+# 운영 호스트의 컨테이너 매니저(또는 docker compose CLI)로 실행.
+# 이미지는 GitHub Actions 가 GHCR 로 푸시한 것을 pull.
+#
+# 배치 규약:
+#   <DEPLOY_PATH>/            — 이 디렉토리에 아래 파일들을 둔다
+#     ├── docker-compose.yml  (이 파일을 이 이름으로 배치)
+#     ├── .env                (env.prod.example.txt 를 채워 복사)
+#     ├── pgdata/             (자동 생성 — DB 영속화)
+#     └── resources/          (자동 생성 — 업로드 파일 영속화)
+#
+# 호스트 포트는 전부 env 로 지정. 실값은 운영 호스트 .env 에만.
+
+services:
+  web:
+    # GHCR 이미지. 태그는 .env 의 APP_IMAGE_TAG 로 제어 (예: v0.3.0, latest).
+    image: ghcr.io/sean-59/personal_ai_chat:${APP_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # DB 접속은 같은 컴포즈 네트워크 안의 서비스명으로.
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+    volumes:
+      # 업로드 파일 영속화 (원본 문서·아이콘 등).
+      - ./resources:/app/resources
+    ports:
+      # 호스트 포트는 .env 의 WEB_HOST_PORT 로 지정. 리버스 프록시 대상.
+      - "${WEB_HOST_PORT}:8000"
+
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    ports:
+      # 호스트 포트는 .env 의 DB_HOST_PORT 로 지정. 필요 없으면 이 블록 삭제해도 web↔db 내부 통신엔 무관.
+      - "${DB_HOST_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s

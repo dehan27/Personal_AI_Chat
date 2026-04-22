@@ -1,5 +1,6 @@
 django>=4.2
-gunicorn
+gunicorn>=22
+whitenoise>=6.6
 psycopg[binary]>=3.1
 pgvector>=0.3
 openai>=1.50

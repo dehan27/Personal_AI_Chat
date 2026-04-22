@@ -17,6 +17,23 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+# 환경변수 헬퍼
+def _env_bool(name: str, default: bool) -> bool:
+    """문자열 env 를 bool로. true/1/yes/on 만 참으로 본다."""
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _env_list(name: str, default: list) -> list:
+    """쉼표 구분 env 를 리스트로. 공백/빈 원소는 제거."""
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    return [item.strip() for item in raw.split(',') if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -25,9 +42,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# 기본값 False — 운영 안전. 로컬 개발은 .env 에 DJANGO_DEBUG=True 명시.
+DEBUG = _env_bool('DJANGO_DEBUG', False)
 
-ALLOWED_HOSTS = ['*']
+# DEBUG=True 면 모든 호스트 허용(개발 편의), False 면 env 에서 명시 필요.
+ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS', ['*'] if DEBUG else [])
+
+# 리버스 프록시 뒤에서 HTTPS 로 들어오는 도메인을 CSRF 신뢰 목록에 등록.
+# 스킴 포함 전체 URL 로 지정 (예: https://your-domain.example).
+CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS', [])
 
 
 # Application definition
@@ -47,6 +70,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise — gunicorn 프로세스가 직접 정적파일 서빙 (nginx 없이도 동작)
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -125,6 +150,18 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
+# collectstatic 결과물 위치. WhiteNoise 가 여기서 서빙.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise 압축·캐시 스토리지 (Django 4.2+ STORAGES 형식)
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # 업로드 파일 (회사 자료 등)
 MEDIA_URL = '/media/'
@@ -132,6 +169,16 @@ MEDIA_ROOT = BASE_DIR / 'resources'
 
 # 같은 도메인의 iframe 허용 (PDF 미리보기 모달용)
 X_FRAME_OPTIONS = 'SAMEORIGIN'
+
+# ─── 리버스 프록시 뒤에서 HTTPS 인식 ──────────────────────
+# 프록시가 X-Forwarded-Proto: https 헤더를 넣어주면 Django가 HTTPS 로 인식.
+# DEBUG=False 에서만 활성화 (로컬 http 개발 시 불필요).
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = True
+    # HTTPS 뒤라면 쿠키도 Secure 로
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
