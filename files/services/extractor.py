@@ -218,14 +218,14 @@ def _extract_xlsx(file_obj) -> str:
         if not rows:
             continue
 
-        md = _table_to_markdown(rows)
-        if not md:
+        body = _rows_to_text(rows)
+        if not body:
             continue
 
         header = f'## {sheet_name}'
         if truncated:
             header += f' (앞 {XLSX_MAX_ROWS_PER_SHEET}행만 포함)'
-        sections.append(f'{header}\n\n{md}')
+        sections.append(f'{header}\n\n{body}')
 
     wb.close()
     return '\n\n'.join(sections)
@@ -310,14 +310,14 @@ def _extract_xls(file_obj) -> str:
         if not rows:
             continue
 
-        md = _table_to_markdown(rows)
-        if not md:
+        body = _rows_to_text(rows)
+        if not body:
             continue
 
         header = f'## {sheet.name}'
         if truncated:
             header += f' (앞 {XLSX_MAX_ROWS_PER_SHEET}행만 포함)'
-        sections.append(f'{header}\n\n{md}')
+        sections.append(f'{header}\n\n{body}')
 
     return '\n\n'.join(sections)
 
@@ -362,8 +362,128 @@ def _format_cell_value(value) -> str:
 
 
 # ----------------------------------------------------------------------------
-# 표 → 마크다운 공용 변환
+# 표 → 텍스트 공용 변환 (와이드 희소 매트릭스 감지 → key-value 직렬화)
 # ----------------------------------------------------------------------------
+
+# 와이드 매트릭스로 간주할 열 수 하한
+MATRIX_MIN_COLS = 10
+# 와이드 매트릭스로 간주할 빈 셀 비율 하한 (0.0~1.0)
+MATRIX_EMPTY_RATIO = 0.6
+
+
+def _rows_to_text(rows) -> str:
+    """2D 셀 배열을 텍스트로. 와이드 희소 매트릭스면 key-value, 아니면 마크다운 표.
+
+    대부분의 표는 기존 마크다운 표로 잘 읽히지만, 결재 라인표·권한 매트릭스
+    같은 "열이 많고 데이터 행이 희소한" 표는 파이프 테이블로 표현하면 LLM이
+    어느 열이 어느 헤더에 해당하는지 잃어버린다. 이런 경우만 감지해서
+    행별 `헤더: 값` 형식으로 직렬화한다.
+    """
+    if not rows:
+        return ''
+    col_count = max(len(r) for r in rows)
+    normalized = [list(r) + [''] * (col_count - len(r)) for r in rows]
+
+    header_block = _detect_header_block(normalized, col_count)
+    if _is_wide_sparse_matrix(normalized, col_count, header_block):
+        return _matrix_to_keyvalue(normalized, col_count, header_block)
+    return _table_to_markdown(normalized)
+
+
+def _detect_header_block(rows, col_count: int) -> tuple:
+    """헤더 블록 (start, end) 인덱스를 추정.
+
+    - start: 위에서부터 스캔해 채워진 비율 ≥ 70%인 첫 번째 행(헤더는 대개 조밀)
+    - end: start 아래로 확장하며 채워진 비율 ≥ 50%인 행까지(다단 헤더 대응).
+      데이터 행은 와이드 희소 매트릭스에서 보통 50% 미만이므로 이 임계치로
+      헤더와 데이터를 분리.
+    그런 행이 없으면 (0, 0) 폴백.
+    """
+    if not rows or col_count == 0:
+        return (0, 0)
+    start = None
+    for idx, row in enumerate(rows):
+        filled = sum(1 for c in row if str(c).strip())
+        if filled / col_count >= 0.7:
+            start = idx
+            break
+    if start is None:
+        return (0, 0)
+    end = start
+    for idx in range(start + 1, len(rows)):
+        filled = sum(1 for c in rows[idx] if str(c).strip())
+        if filled / col_count >= 0.5:
+            end = idx
+        else:
+            break
+    return (start, end)
+
+
+def _is_wide_sparse_matrix(rows, col_count: int, header_block: tuple) -> bool:
+    """와이드 희소 매트릭스 여부 판정.
+
+    기준: 열 수 ≥ MATRIX_MIN_COLS AND 데이터 행(헤더 블록 이하)의 빈 셀 비율 ≥
+    MATRIX_EMPTY_RATIO. 헤더는 대개 조밀하므로 데이터 행만 본질적 기준.
+    """
+    if col_count < MATRIX_MIN_COLS:
+        return False
+    _, header_end = header_block
+    data_rows = rows[header_end + 1:]
+    if not data_rows:
+        return False
+    total = col_count * len(data_rows)
+    if total == 0:
+        return False
+    empty = sum(1 for r in data_rows for c in r if not str(c).strip())
+    return (empty / total) >= MATRIX_EMPTY_RATIO
+
+
+def _matrix_to_keyvalue(rows, col_count: int, header_block: tuple) -> str:
+    """와이드 희소 매트릭스를 행별 `헤더: 값` 형식으로 직렬화.
+
+    헤더 블록 이전은 타이틀/설명(prelude)으로 앞에 붙이고,
+    헤더 블록 각 열 값을 합쳐 다단 헤더를 만든 뒤,
+    데이터 행마다 비어있지 않은 열만 `헤더: 값`으로 나열.
+    """
+    header_start, header_end = header_block
+
+    # 헤더 블록 이전: 타이틀/설명(prelude)
+    prelude: List[str] = []
+    for i in range(header_start):
+        parts = [str(c).strip() for c in rows[i] if str(c).strip()]
+        if parts:
+            prelude.append(' '.join(parts))
+
+    # 다단 헤더: header_block 범위의 각 열 값을 중복 제거 후 결합
+    col_headers: List[str] = []
+    for c_idx in range(col_count):
+        seen: List[str] = []
+        for r_idx in range(header_start, header_end + 1):
+            v = str(rows[r_idx][c_idx]).strip()
+            if v and v not in seen:
+                seen.append(v)
+        col_headers.append(' '.join(seen) if seen else f'열{c_idx + 1}')
+
+    # 데이터 행: 비어있지 않은 셀만 `헤더: 값` 페어로
+    data_lines: List[str] = []
+    seq = 1
+    for i in range(header_end + 1, len(rows)):
+        pairs = []
+        for c_idx, val in enumerate(rows[i]):
+            v = str(val).strip()
+            if v:
+                pairs.append(f'{col_headers[c_idx]}: {v}')
+        if pairs:
+            data_lines.append(f'[행 {seq}] ' + ' | '.join(pairs))
+            seq += 1
+
+    out_parts: List[str] = []
+    if prelude:
+        out_parts.append('\n'.join(prelude))
+    if data_lines:
+        out_parts.append('\n'.join(data_lines))
+    return '\n\n'.join(out_parts)
+
 
 def _table_to_markdown(rows) -> str:
     """2차원 리스트(행 x 셀)를 마크다운 표로 변환.
