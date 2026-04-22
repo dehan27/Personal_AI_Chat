@@ -34,7 +34,7 @@ def qa_root(request):
 # ---------------------------------------------------------------------------
 
 def qa_logs(request):
-    tab = request.GET.get('tab', 'pending')
+    tab = request.GET.get('tab', 'all')
 
     base_qs = ChatLog.objects.annotate(
         up_count=Count('feedbacks', filter=Q(feedbacks__rating=Feedback.Rating.UP)),
@@ -168,8 +168,18 @@ def qa_promote(request, pk):
 
 @require_POST
 def qa_log_delete(request, pk):
-    """ChatLog 삭제 (Feedback CASCADE)."""
-    ChatLog.objects.filter(pk=pk).delete()
+    """ChatLog 삭제 (Feedback CASCADE).
+
+    공식 Q&A로 승격된 로그는 여기서 삭제 불가(공식 Q&A 창에서만 관리).
+    """
+    cl = get_object_or_404(
+        ChatLog.objects.annotate(promoted_count=Count('promotions')),
+        pk=pk,
+    )
+    if cl.promoted_count > 0:
+        messages.error(request, '공식 Q&A로 승격된 로그는 공식 Q&A 창에서만 삭제할 수 있습니다.')
+        return redirect(_back_to(request))
+    cl.delete()
     messages.success(request, '대화 로그를 삭제했습니다.')
     return redirect(_back_to(request))
 

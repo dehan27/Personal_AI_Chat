@@ -18,7 +18,7 @@ from files.services.pipeline import (
 
 
 # 업로드 설정
-ALLOWED_EXTS = {'.txt', '.md', '.pdf', '.docx'}
+ALLOWED_EXTS = {'.txt', '.md', '.pdf', '.docx', '.xlsx', '.xlsm', '.xls'}
 MAX_SIZE_BYTES = 20 * 1024 * 1024  # 20MB
 
 # 파일 목록 페이지당 표시 수

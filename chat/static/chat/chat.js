@@ -1,5 +1,8 @@
 (function () {
   const messagesEl = document.getElementById('messages');
+  // 실제 overflow-y: auto 가 걸려 있는 스크롤 컨테이너는 messagesEl 부모(.chat-messages).
+  // messagesEl 자체는 폭 제한용 .chat-frame 이라 scrollTop 조작해도 움직이지 않는다.
+  const scrollContainer = document.querySelector('.chat-messages');
   const form = document.getElementById('chatForm');
   const input = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -251,7 +254,11 @@
   }
 
   function scrollToBottom() {
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    // 메시지 append 직후 호출되면 아직 레이아웃이 갱신 전일 수 있어
+    // 다음 프레임에 실제 scrollHeight 기준으로 내린다.
+    requestAnimationFrame(() => {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    });
   }
 
   function setInputEnabled(enabled) {

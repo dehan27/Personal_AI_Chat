@@ -28,7 +28,7 @@
         허용 확장자: {{ allowed_exts }} · 최대 {{ max_size_mb }}MB
       </div>
     </label>
-    <input type="file" id="fileInput" name="file" accept=".txt,.md,.pdf,.docx" hidden required>
+    <input type="file" id="fileInput" name="file" accept="{{ allowed_exts }}" hidden required>
     <div class="upload-file-info" id="fileInfo"></div>
     <div class="upload-actions">
       <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>업로드</button>

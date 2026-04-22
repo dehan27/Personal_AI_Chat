@@ -21,10 +21,59 @@
     font-size: var(--font-size-sm);
   }
   .review-meta-row:last-child { border-bottom: none; }
-  .review-meta-label { color: var(--color-text-secondary); }
+  .review-meta-label {
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
   .review-meta-value {
     color: var(--color-text-primary);
     font-weight: var(--font-weight-medium);
+  }
+
+  /* 긴 값 말줄임 + hover 툴팁 (파일명·형식 등)
+     외부 래퍼(position: relative, overflow X)가 툴팁 담고,
+     내부 span이 overflow: hidden으로 말줄임 담당 */
+  .review-meta-truncate {
+    max-width: 60%;
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+  }
+  .review-meta-truncate > .truncate-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .review-meta-truncate[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--color-text-primary);
+    color: var(--color-text-inverse);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    line-height: 1.4;
+    white-space: normal;
+    word-break: break-all;
+    min-width: 140px;
+    max-width: 320px;
+    box-shadow: var(--shadow-md);
+    z-index: 10;
+    pointer-events: none;
+  }
+  .review-meta-truncate[data-tooltip]:hover::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    right: 12px;
+    border: 4px solid transparent;
+    border-bottom-color: var(--color-text-primary);
+    z-index: 11;
+    pointer-events: none;
   }
   .review-textarea {
     width: 100%;
@@ -82,8 +131,8 @@
       <h2 class="card-title">파일 정보</h2>
       <div class="review-meta-row">
         <span class="review-meta-label">파일명</span>
-        <span class="review-meta-value" style="max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ doc.original_name }}">
-          {{ doc.original_name }}
+        <span class="review-meta-value review-meta-truncate" data-tooltip="{{ doc.original_name }}">
+          <span class="truncate-text">{{ doc.original_name }}</span>
         </span>
       </div>
       <div class="review-meta-row">
@@ -92,7 +141,9 @@
       </div>
       <div class="review-meta-row">
         <span class="review-meta-label">형식</span>
-        <span class="review-meta-value">{{ doc.mime_type|default:"-" }}</span>
+        <span class="review-meta-value review-meta-truncate" data-tooltip="{{ doc.mime_type|default:'-' }}">
+          <span class="truncate-text">{{ doc.mime_type|default:"-" }}</span>
+        </span>
       </div>
       <div class="review-meta-row">
         <span class="review-meta-label">상태</span>

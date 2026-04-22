@@ -23,14 +23,14 @@
 {% endif %}
 
 <nav class="qa-tabs">
+  <a class="qa-tab {% if tab == 'all' %}active{% endif %}" href="?tab=all">
+    전체 <span class="qa-tab-count">{{ tab_counts.all }}</span>
+  </a>
   <a class="qa-tab {% if tab == 'pending' %}active{% endif %}" href="?tab=pending">
     미승격 <span class="qa-tab-count">{{ tab_counts.pending }}</span>
   </a>
   <a class="qa-tab {% if tab == 'promoted' %}active{% endif %}" href="?tab=promoted">
-    승격됨 <span class="qa-tab-count">{{ tab_counts.promoted }}</span>
-  </a>
-  <a class="qa-tab {% if tab == 'all' %}active{% endif %}" href="?tab=all">
-    전체 <span class="qa-tab-count">{{ tab_counts.all }}</span>
+    승격 <span class="qa-tab-count">{{ tab_counts.promoted }}</span>
   </a>
 </nav>
 
@@ -58,12 +58,12 @@
             {% csrf_token %}
             <button type="submit" class="btn btn-sm btn-primary">공식 승격</button>
           </form>
+          <form method="post" action="{% url 'bo:qa_log_delete' cl.pk %}" style="display: inline;"
+                onsubmit="return confirm('이 대화 로그를 삭제하시겠습니까?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+          </form>
         {% endif %}
-        <form method="post" action="{% url 'bo:qa_log_delete' cl.pk %}" style="display: inline;"
-              onsubmit="return confirm('이 대화 로그를 삭제하시겠습니까?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
-        </form>
       </div>
     </article>
   {% endfor %}
