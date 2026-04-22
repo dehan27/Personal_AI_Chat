@@ -1,0 +1,10 @@
+django>=4.2
+gunicorn
+psycopg[binary]>=3.1
+pgvector>=0.3
+openai>=1.50
+pypdf>=4.2
+pdfplumber>=0.11
+pymupdf>=1.24
+python-docx>=1.1
+tiktoken>=0.7

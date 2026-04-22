@@ -1,0 +1,144 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}파일관리{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">파일관리</h1>
+    <p class="page-description">회사 자료 원본 파일 업로드와 삭제</p>
+  </div>
+</header>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endif %}
+
+<section class="card" style="margin-bottom: var(--space-6);">
+  <h2 class="card-title">새 파일 업로드</h2>
+  <form class="upload-form" method="post" action="{% url 'bo:upload' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label class="upload-dropzone" for="fileInput">
+      <div>클릭해서 파일 선택</div>
+      <div class="upload-hint" style="margin-top: var(--space-2);">
+        허용 확장자: {{ allowed_exts }} · 최대 {{ max_size_mb }}MB
+      </div>
+    </label>
+    <input type="file" id="fileInput" name="file" accept=".txt,.md,.pdf,.docx" hidden required>
+    <div class="upload-file-info" id="fileInfo"></div>
+    <div class="upload-actions">
+      <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>업로드</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">업로드된 파일</h2>
+  {% if documents %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>파일명</th>
+            <th>크기</th>
+            <th>상태</th>
+            <th>업로드일</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for doc in documents %}
+            <tr>
+              <td>
+                <a href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>
+              </td>
+              <td>{{ doc.size_bytes|filesizeformat }}</td>
+              <td>
+                {% if doc.status == 'ready' %}
+                  <span class="badge badge-success">준비완료</span>
+                {% elif doc.status == 'reviewing' %}
+                  <span class="badge badge-warning">검토대기</span>
+                {% elif doc.status == 'processing' %}
+                  <span class="badge badge-info">처리중</span>
+                {% elif doc.status == 'pending' %}
+                  <span class="badge badge-warning">대기</span>
+                {% else %}
+                  <span class="badge badge-danger">실패</span>
+                {% endif %}
+              </td>
+              <td>{{ doc.uploaded_at|date:"Y-m-d H:i" }}</td>
+              <td class="text-right">
+                {% if doc.status == 'reviewing' or doc.status == 'failed' %}
+                  <a href="{% url 'bo:review' doc.pk %}" class="btn btn-sm">검토</a>
+                {% endif %}
+                <form method="post" action="{% url 'bo:delete' doc.pk %}" style="display: inline;" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+      <nav class="pagination">
+        <div class="pagination-row">
+          {% if page_obj.has_previous %}
+            <a class="pagination-btn" href="?page={{ page_obj.previous_page_number }}">‹ 이전</a>
+          {% else %}
+            <span class="pagination-btn disabled">‹ 이전</span>
+          {% endif %}
+
+          {% for n in page_obj.paginator.page_range %}
+            {% if n == page_obj.number %}
+              <span class="pagination-page active">{{ n }}</span>
+            {% else %}
+              <a class="pagination-page" href="?page={{ n }}">{{ n }}</a>
+            {% endif %}
+          {% endfor %}
+
+          {% if page_obj.has_next %}
+            <a class="pagination-btn" href="?page={{ page_obj.next_page_number }}">다음 ›</a>
+          {% else %}
+            <span class="pagination-btn disabled">다음 ›</span>
+          {% endif %}
+        </div>
+        <div class="pagination-info">총 {{ total_count }}건</div>
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">아직 업로드된 파일이 없습니다</div>
+      <div>위 업로드 영역에서 파일을 추가해주세요.</div>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // 파일 선택 시 파일명 표시 + 업로드 버튼 활성화
+  (function () {
+    const input = document.getElementById('fileInput');
+    const info = document.getElementById('fileInfo');
+    const btn = document.getElementById('uploadBtn');
+
+    input.addEventListener('change', () => {
+      const f = input.files[0];
+      if (f) {
+        info.textContent = `선택됨: ${f.name} (${(f.size/1024).toFixed(1)} KB)`;
+        btn.disabled = false;
+      } else {
+        info.textContent = '';
+        btn.disabled = true;
+      }
+    });
+  })();
+</script>
+{% endblock %}

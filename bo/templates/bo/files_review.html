@@ -1,0 +1,178 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}파일 검토 · {{ doc.original_name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .review-grid {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: var(--space-6);
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .review-grid { grid-template-columns: 1fr; }
+  }
+  .review-meta-row {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--font-size-sm);
+  }
+  .review-meta-row:last-child { border-bottom: none; }
+  .review-meta-label { color: var(--color-text-secondary); }
+  .review-meta-value {
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .review-textarea {
+    width: 100%;
+    min-height: 500px;
+    padding: var(--space-4);
+    font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-primary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    resize: vertical;
+    outline: none;
+  }
+  .review-textarea:focus {
+    border-color: var(--color-accent-border);
+    box-shadow: 0 0 0 3px var(--color-accent-light);
+    background: var(--color-bg);
+  }
+  .review-actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: flex-end;
+    margin-top: var(--space-4);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">파일 검토</h1>
+    <p class="page-description">추출된 텍스트를 확인·편집한 뒤 임베딩을 진행하세요</p>
+  </div>
+  <a href="{% url 'bo:files' %}" class="btn">← 목록으로</a>
+</header>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% for warning in warnings %}
+  <div class="alert alert-danger">⚠ {{ warning }}</div>
+{% endfor %}
+
+<div class="review-grid">
+  <!-- 좌측: 파일 정보 + 통계 -->
+  <aside>
+    <section class="card" style="margin-bottom: var(--space-4);">
+      <h2 class="card-title">파일 정보</h2>
+      <div class="review-meta-row">
+        <span class="review-meta-label">파일명</span>
+        <span class="review-meta-value" style="max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ doc.original_name }}">
+          {{ doc.original_name }}
+        </span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label">크기</span>
+        <span class="review-meta-value">{{ doc.size_bytes|filesizeformat }}</span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label">형식</span>
+        <span class="review-meta-value">{{ doc.mime_type|default:"-" }}</span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label">상태</span>
+        <span class="review-meta-value">
+          {% if doc.status == 'reviewing' %}
+            <span class="badge badge-warning">검토대기</span>
+          {% elif doc.status == 'ready' %}
+            <span class="badge badge-success">준비완료</span>
+          {% elif doc.status == 'failed' %}
+            <span class="badge badge-danger">실패</span>
+          {% else %}
+            <span class="badge">{{ doc.status }}</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label">원본</span>
+        <a href="{{ doc.file.url }}" target="_blank" rel="noopener" class="review-meta-value">열기</a>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom: var(--space-4);">
+      <h2 class="card-title">텍스트 통계</h2>
+      <div class="review-meta-row">
+        <span class="review-meta-label">글자 수</span>
+        <span class="review-meta-value" id="stat-chars">{{ char_count }}</span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label">토큰 수</span>
+        <span class="review-meta-value" id="stat-tokens">{{ token_count }}</span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label">예상 청크</span>
+        <span class="review-meta-value" id="stat-chunks">{{ chunk_estimate }}개</span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label">예상 비용</span>
+        <span class="review-meta-value">약 {{ cost_krw|floatformat:2 }}원</span>
+      </div>
+      <div class="review-meta-row">
+        <span class="review-meta-label" style="font-size: 11px;">임베딩 모델</span>
+        <span class="review-meta-value" style="font-size: 11px; font-family: monospace;">{{ embed_model }}</span>
+      </div>
+    </section>
+
+    <!-- 취소(삭제) 버튼 -->
+    <form method="post" action="{% url 'bo:delete' doc.pk %}"
+          onsubmit="return confirm('업로드를 취소하고 파일을 삭제하시겠습니까?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger" style="width: 100%;">취소 및 삭제</button>
+    </form>
+  </aside>
+
+  <!-- 우측: 텍스트 편집기 -->
+  <section class="card">
+    <h2 class="card-title">추출된 텍스트 (편집 가능)</h2>
+    <p class="page-description" style="margin-bottom: var(--space-4);">
+      표·레이아웃 문제 등으로 잘못 추출된 부분이 있으면 직접 수정하세요. 수정한 내용으로 임베딩됩니다.
+    </p>
+    <form method="post" action="{% url 'bo:confirm' doc.pk %}">
+      {% csrf_token %}
+      <textarea name="edited_text" class="review-textarea" id="editor" required>{{ text }}</textarea>
+      <div class="review-actions">
+        <button type="submit" class="btn btn-primary">임베딩 진행</button>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // 텍스트 편집 시 글자 수를 실시간 갱신
+  (function () {
+    const editor = document.getElementById('editor');
+    const statChars = document.getElementById('stat-chars');
+    if (!editor || !statChars) return;
+    editor.addEventListener('input', () => {
+      statChars.textContent = editor.value.length;
+    });
+  })();
+</script>
+{% endblock %}

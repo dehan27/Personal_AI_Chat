@@ -1,0 +1,78 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}대화 로그{% endblock %}
+
+{% block extra_head %}
+{% include 'bo/_qa_styles.html' %}
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Q&amp;A 관리</h1>
+    <p class="page-description">모든 채팅 로그입니다. 좋은 답변은 [공식 승격]으로 검색용 공식 Q&amp;A에 추가됩니다.</p>
+  </div>
+</header>
+
+{% include 'bo/_qa_subnav.html' %}
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+<nav class="qa-tabs">
+  <a class="qa-tab {% if tab == 'pending' %}active{% endif %}" href="?tab=pending">
+    미승격 <span class="qa-tab-count">{{ tab_counts.pending }}</span>
+  </a>
+  <a class="qa-tab {% if tab == 'promoted' %}active{% endif %}" href="?tab=promoted">
+    승격됨 <span class="qa-tab-count">{{ tab_counts.promoted }}</span>
+  </a>
+  <a class="qa-tab {% if tab == 'all' %}active{% endif %}" href="?tab=all">
+    전체 <span class="qa-tab-count">{{ tab_counts.all }}</span>
+  </a>
+</nav>
+
+{% if items %}
+  {% for cl in items %}
+    <article class="qa-card">
+      <h2 class="qa-question">Q. {{ cl.question }}</h2>
+      <div class="qa-meta">
+        {% if cl.promoted_count > 0 %}
+          <span class="badge badge-success">공식 Q&amp;A 승격됨</span>
+        {% endif %}
+        <span>생성: {{ cl.created_at|date:"Y-m-d H:i" }}</span>
+        <span class="qa-feedback-count">👍 {{ cl.up_count|default:0 }}</span>
+        <span class="qa-feedback-count">👎 {{ cl.down_count|default:0 }}</span>
+        {% if cl.source_names %}
+          <span>출처: {{ cl.source_names|join:", " }}</span>
+        {% endif %}
+      </div>
+      <div class="qa-answer">A. {{ cl.answer }}</div>
+      <div class="qa-actions">
+        {% if cl.promoted_count > 0 %}
+          <a href="{% url 'bo:qa_canonical' %}" class="btn btn-sm">공식 Q&amp;A 보기</a>
+        {% else %}
+          <form method="post" action="{% url 'bo:qa_promote' cl.pk %}" style="display: inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-primary">공식 승격</button>
+          </form>
+        {% endif %}
+        <form method="post" action="{% url 'bo:qa_log_delete' cl.pk %}" style="display: inline;"
+              onsubmit="return confirm('이 대화 로그를 삭제하시겠습니까?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+        </form>
+      </div>
+    </article>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">
+      {% if tab == 'pending' %}미승격 대화 로그가 없습니다{% elif tab == 'promoted' %}승격된 대화 로그가 없습니다{% else %}아직 대화 로그가 없습니다{% endif %}
+    </div>
+    <div>채팅에서 회사 자료 기반 답변이 나오면 여기에 쌓입니다.</div>
+  </div>
+{% endif %}
+{% endblock %}

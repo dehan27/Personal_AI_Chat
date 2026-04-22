@@ -1,0 +1,145 @@
+{% comment %}Q&A 관련 공용 CSS. 각 페이지에서 extra_head 블록에 include{% endcomment %}
+<style>
+  .qa-subnav {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-6);
+    padding: 4px;
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+    width: fit-content;
+  }
+  .qa-subnav-item {
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all var(--transition-base);
+  }
+  .qa-subnav-item:hover { color: var(--color-text-primary); }
+  .qa-subnav-item.active {
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-medium);
+    box-shadow: var(--shadow-sm);
+  }
+  .qa-subnav-count {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    color: var(--color-text-muted);
+  }
+  .qa-subnav-item.active .qa-subnav-count {
+    background: var(--color-accent-light);
+    color: var(--color-accent-text);
+  }
+
+  .qa-tabs {
+    display: flex;
+    gap: var(--space-1);
+    margin-bottom: var(--space-6);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .qa-tab {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all var(--transition-base);
+  }
+  .qa-tab:hover { color: var(--color-text-primary); }
+  .qa-tab.active {
+    color: var(--color-accent-text);
+    border-bottom-color: var(--color-accent);
+    font-weight: var(--font-weight-medium);
+  }
+  .qa-tab-count {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    color: var(--color-text-muted);
+  }
+  .qa-tab.active .qa-tab-count {
+    background: var(--color-accent-light);
+    color: var(--color-accent-text);
+  }
+
+  .qa-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    margin-bottom: var(--space-4);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .qa-question {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    margin: 0 0 var(--space-3);
+  }
+
+  .qa-answer {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+    line-height: var(--line-height-normal);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    white-space: pre-wrap;
+    margin-bottom: var(--space-3);
+  }
+
+  .qa-answer-editor {
+    width: 100%;
+    min-height: 140px;
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+    background: var(--color-bg);
+    border: 1px solid var(--color-accent-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    resize: vertical;
+    outline: none;
+    line-height: var(--line-height-normal);
+  }
+  .qa-answer-editor:focus {
+    box-shadow: 0 0 0 3px var(--color-accent-light);
+  }
+
+  .qa-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-3);
+  }
+
+  .qa-feedback-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .qa-actions, .qa-edit-actions {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: flex-end;
+  }
+  .qa-edit-actions { margin-top: var(--space-2); }
+</style>

@@ -1,0 +1,12 @@
+{% comment %}Q&A 관리 상단 서브 네비게이션 (section = 'logs' | 'feedback' | 'canonical'){% endcomment %}
+<nav class="qa-subnav">
+  <a class="qa-subnav-item {% if section == 'logs' %}active{% endif %}" href="{% url 'bo:qa_logs' %}">
+    대화 로그 <span class="qa-subnav-count">{{ counts.logs|default:0 }}</span>
+  </a>
+  <a class="qa-subnav-item {% if section == 'feedback' %}active{% endif %}" href="{% url 'bo:qa_feedback' %}">
+    답변 응답 <span class="qa-subnav-count">{{ counts.feedback|default:0 }}</span>
+  </a>
+  <a class="qa-subnav-item {% if section == 'canonical' %}active{% endif %}" href="{% url 'bo:qa_canonical' %}">
+    공식 Q&amp;A <span class="qa-subnav-count">{{ counts.canonical|default:0 }}</span>
+  </a>
+</nav>

@@ -1,0 +1,78 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}답변 응답{% endblock %}
+
+{% block extra_head %}
+{% include 'bo/_qa_styles.html' %}
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Q&amp;A 관리</h1>
+    <p class="page-description">사용자가 엄지 피드백을 남긴 대화입니다. 나쁨이 많은 순으로 먼저 확인하세요.</p>
+  </div>
+</header>
+
+{% include 'bo/_qa_subnav.html' %}
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+<nav class="qa-tabs">
+  <a class="qa-tab {% if tab == 'all' %}active{% endif %}" href="?tab=all">
+    전체 <span class="qa-tab-count">{{ counts.all }}</span>
+  </a>
+  <a class="qa-tab {% if tab == 'up' %}active{% endif %}" href="?tab=up">
+    좋음 <span class="qa-tab-count">{{ counts.up }}</span>
+  </a>
+  <a class="qa-tab {% if tab == 'down' %}active{% endif %}" href="?tab=down">
+    나쁨 <span class="qa-tab-count">{{ counts.down }}</span>
+  </a>
+</nav>
+
+{% if items %}
+  {% for cl in items %}
+    <article class="qa-card">
+      <h2 class="qa-question">Q. {{ cl.question }}</h2>
+      <div class="qa-meta">
+        {% if cl.promoted_count > 0 %}
+          <span class="badge badge-success">공식 Q&amp;A 승격됨</span>
+        {% endif %}
+        <span>생성: {{ cl.created_at|date:"Y-m-d H:i" }}</span>
+        <span class="qa-feedback-count">👍 {{ cl.up_count }}</span>
+        <span class="qa-feedback-count">👎 {{ cl.down_count }}</span>
+        {% if cl.source_names %}
+          <span>출처: {{ cl.source_names|join:", " }}</span>
+        {% endif %}
+      </div>
+      <div class="qa-answer">A. {{ cl.answer }}</div>
+      <div class="qa-actions">
+        {% if cl.promoted_count > 0 %}
+          <a href="{% url 'bo:qa_canonical' %}" class="btn btn-sm">공식 Q&amp;A 보기</a>
+        {% else %}
+          <form method="post" action="{% url 'bo:qa_promote' cl.pk %}" style="display: inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-primary">공식 승격</button>
+          </form>
+        {% endif %}
+        <form method="post" action="{% url 'bo:qa_log_delete' cl.pk %}" style="display: inline;"
+              onsubmit="return confirm('이 대화 로그를 삭제하시겠습니까?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+        </form>
+      </div>
+    </article>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">
+      {% if tab == 'down' %}👎 받은 대화가 없습니다{% elif tab == 'up' %}👍 받은 대화가 없습니다{% else %}피드백 있는 대화가 없습니다{% endif %}
+    </div>
+    <div>채팅에서 엄지 피드백이 달리면 여기에 모입니다.</div>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,127 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}공식 Q&amp;A{% endblock %}
+
+{% block extra_head %}
+{% include 'bo/_qa_styles.html' %}
+<style>
+  .canonical-editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .canonical-editor label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .canonical-editor textarea,
+  .canonical-editor input[type="text"] {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+    background: var(--color-bg);
+    border: 1px solid var(--color-accent-border);
+    border-radius: var(--radius-md);
+    outline: none;
+  }
+  .canonical-editor textarea { min-height: 140px; resize: vertical; }
+  .canonical-editor textarea:focus,
+  .canonical-editor input:focus {
+    box-shadow: 0 0 0 3px var(--color-accent-light);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Q&amp;A 관리</h1>
+    <p class="page-description">챗봇이 검색·재사용하는 공식 Q&amp;A 목록입니다. 편집·삭제할 수 있습니다.</p>
+  </div>
+</header>
+
+{% include 'bo/_qa_subnav.html' %}
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+{% if items %}
+  {% for qa in items %}
+    <article class="qa-card" data-qa-id="{{ qa.pk }}">
+      <h2 class="qa-question">Q. {{ qa.question }}</h2>
+      <div class="qa-meta">
+        <span>생성: {{ qa.created_at|date:"Y-m-d H:i" }}</span>
+        {% if qa.source_chatlog %}
+          <span>ChatLog #{{ qa.source_chatlog_id }} 에서 승격</span>
+        {% endif %}
+        {% if qa.source_names %}
+          <span>출처: {{ qa.source_names|join:", " }}</span>
+        {% endif %}
+      </div>
+
+      <div class="qa-answer-display">
+        <div class="qa-answer">A. {{ qa.answer }}</div>
+        <div class="qa-actions">
+          <button type="button" class="btn btn-sm" data-edit-btn>편집</button>
+          <form method="post" action="{% url 'bo:qa_canonical_delete' qa.pk %}" style="display: inline;"
+                onsubmit="return confirm('이 공식 Q&amp;A를 삭제하시겠습니까?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+          </form>
+        </div>
+      </div>
+
+      <form method="post" action="{% url 'bo:qa_canonical_update' qa.pk %}" class="qa-answer-editor-form canonical-editor" style="display: none;">
+        {% csrf_token %}
+        <div>
+          <label>질문</label>
+          <input type="text" name="question" value="{{ qa.question }}" required>
+        </div>
+        <div>
+          <label>답변</label>
+          <textarea name="answer" required>{{ qa.answer }}</textarea>
+        </div>
+        <div class="qa-edit-actions">
+          <button type="button" class="btn btn-sm" data-cancel-edit-btn>취소</button>
+          <button type="submit" class="btn btn-sm btn-primary">저장</button>
+        </div>
+      </form>
+    </article>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">공식 Q&amp;A가 없습니다</div>
+    <div>대화 로그에서 좋은 답변을 [공식 승격]으로 추가하세요.</div>
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    document.querySelectorAll('.qa-card').forEach((card) => {
+      const display = card.querySelector('.qa-answer-display');
+      const editForm = card.querySelector('.qa-answer-editor-form');
+      const editBtn = card.querySelector('[data-edit-btn]');
+      const cancelBtn = card.querySelector('[data-cancel-edit-btn]');
+      if (!display || !editForm || !editBtn || !cancelBtn) return;
+      editBtn.addEventListener('click', () => {
+        display.style.display = 'none';
+        editForm.style.display = '';
+        editForm.querySelector('textarea, input').focus();
+      });
+      cancelBtn.addEventListener('click', () => {
+        editForm.style.display = 'none';
+        display.style.display = '';
+      });
+    });
+  })();
+</script>
+{% endblock %}

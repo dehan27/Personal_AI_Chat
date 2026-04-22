@@ -1,0 +1,60 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 채팅</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'chat/chat.css' %}">
+  <!-- 마크다운 렌더링 (봇 답변 전용) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+</head>
+<body>
+  <div class="chat-app" id="chatApp">
+    <header class="chat-header">
+      <div class="chat-frame">
+        <div class="chat-header-title">AI 채팅</div>
+        <button type="button" class="chat-header-reset" id="resetBtn" aria-label="대화 초기화">초기화</button>
+      </div>
+    </header>
+
+    <main class="chat-messages" aria-live="polite">
+      <div class="chat-frame" id="messages">
+        <div class="msg msg-bot">
+          <div class="msg-main">
+            <div class="msg-avatar msg-avatar-bot">
+              <img src="/media/icon/icon.png" alt="TA9" onerror="this.style.display='none'">
+            </div>
+            <div class="msg-bubble">안녕하세요! TA9 챗봇입니다.<br>무엇을 도와드릴까요?</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <form class="chat-input" id="chatForm" autocomplete="off">
+      <div class="chat-frame">
+        {% csrf_token %}
+        <input
+          type="text"
+          id="userInput"
+          class="chat-input-field"
+          placeholder="메시지를 입력하세요"
+          aria-label="메시지 입력"
+        >
+        <button type="submit" class="chat-input-send" id="sendBtn" aria-label="전송">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <script src="{% static 'chat/chat.js' %}"></script>
+</body>
+</html>
