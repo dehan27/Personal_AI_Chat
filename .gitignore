@@ -1,0 +1,141 @@
+# ====================
+#  환경변수·비밀정보
+# ====================
+.env
+.env.*
+# env.example.txt 은 샘플 템플릿이므로 커밋 대상 (위 .env.* 패턴에 걸리지 않음)
+*.pem
+*.key
+secrets/
+
+# ====================
+#  Python
+# ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 빌드·패키징 아티팩트
+build/
+dist/
+*.egg-info/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.installed.cfg
+
+# 타입/테스트 캐시
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ====================
+#  Django
+# ====================
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# 정적 파일·업로드 파일 (런타임 생성물)
+staticfiles/
+media/
+
+# resources/ 는 디렉토리 구조만 유지, 내부 파일은 제외 (.gitkeep으로 빈 디렉토리 커밋)
+resources/origin/*
+!resources/origin/.gitkeep
+resources/icon/*
+!resources/icon/.gitkeep
+
+# 마이그레이션 파일은 커밋해야 하므로 무시하지 않음
+# (필요 시 .pyc만 걸러냄)
+
+# ====================
+#  가상환경
+# ====================
+.venv/
+venv/
+env/
+ENV/
+
+# ====================
+#  Node / 프런트엔드 (혹시 추가될 경우)
+# ====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ====================
+#  IDE / 에디터
+# ====================
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ====================
+#  Claude Code / AI 도구
+# ====================
+.claude/
+CLAUDE.md
+.cursor/
+.continue/
+.aider*
+.copilot/
+
+# ====================
+#  macOS
+# ====================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# ====================
+#  Windows
+# ====================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ====================
+#  Linux
+# ====================
+*~
+.fuse_hidden*
+.Trash-*
+.nfs*
+
+# ====================
+#  Docker (로컬 오버라이드만 제외, compose 파일은 커밋)
+# ====================
+docker-compose.override.yml
+docker-compose.override.yaml
+.docker/
+
+# ====================
+#  기타
+# ====================
+*.bak
+*.tmp
+*.temp
+.cache/
