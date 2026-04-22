@@ -1,0 +1,43 @@
+# 프로덕션용 이미지: gunicorn + whitenoise 로 정적파일까지 서빙.
+# 컨테이너 기반이면 어떤 호스트에서든 동일하게 구동됨.
+
+FROM python:3.11-slim
+
+# 의존성 빌드에 필요한 패키지 (pymupdf, psycopg 바이너리 빌드 시 필요할 수 있음)
+# slim 이미지는 build-essential 이 없어 추가 설치 후 다시 제거.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DJANGO_SETTINGS_MODULE=AI_Chat.settings
+
+WORKDIR /app
+
+# 파이썬 의존성 먼저 (레이어 캐시 최대화)
+COPY requirements.txt .
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential libpq-dev \
+ && pip install -r requirements.txt \
+ && apt-get purge -y build-essential \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/*
+
+# 소스 복사
+COPY . .
+
+# collectstatic — whitenoise 가 서빙할 정적파일을 한곳에 모음.
+# 빌드 시점에 더미 SECRET_KEY로 실행 (실제 키는 런타임에 주입됨).
+RUN DJANGO_SECRET_KEY=build-time-dummy python manage.py collectstatic --noinput
+
+# 비루트 사용자로 실행 (컨테이너 탈출 위험 감소)
+RUN useradd --create-home --uid 1000 app \
+ && chown -R app:app /app
+USER app
+
+EXPOSE 8000
+
+# 기동 시:
+#  1) 마이그레이션 적용 (DB 스키마 최신화)
+#  2) gunicorn 기동
+#     - 워커 3개, gthread 방식 (OpenAI 응답 대기 IO 바운드 특성 반영)
+#     - 슬로우 요청이 있으므로 타임아웃 120s
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn AI_Chat.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --worker-class gthread --timeout 120 --access-logfile - --error-logfile -"]
