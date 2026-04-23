@@ -17,7 +17,7 @@ total=False 로 둬서 호출자가 초기 상태를 구성할 때 result / erro
 
 from typing import Optional, TypedDict
 
-from chat.services.query_pipeline import QueryResult
+from chat.services.single_shot.types import QueryResult
 
 
 class GraphState(TypedDict, total=False):

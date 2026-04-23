@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from chat.graph.nodes.router import router_node
 from chat.graph.nodes.single_shot import single_shot_node
 from chat.graph.state import GraphState
-from chat.services.query_pipeline import QueryPipelineError, QueryResult
+from chat.services.single_shot.types import QueryPipelineError, QueryResult
 
 
 @lru_cache(maxsize=1)

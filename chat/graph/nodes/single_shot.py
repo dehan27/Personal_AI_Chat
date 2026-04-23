@@ -1,21 +1,19 @@
-"""Single-shot node — 기존 query_pipeline.answer_question() 을 graph 안에서 재사용.
+"""Single-shot node — single_shot 패키지의 파이프라인을 graph 에서 실행.
 
-Phase 2 에서는 본체를 재작성하지 않는다. answer_question() 은 그대로 두고
-여기선 호출 + 결과·에러를 state 로 옮기는 래퍼 역할만 한다.
-
-Phase 3 에서 answer_question() 을 더 작은 함수들(검색 / 재정렬 / 프롬프트 조립 /
-OpenAI 호출 / 저장)로 쪼개고 node 책임을 재정리할 예정. 그 시점까지 이 노드는
-'호환성 보존' 목적이다.
+Phase 3 에서 `chat.services.single_shot.pipeline.run_single_shot` 으로 직접
+연결. 예외는 node 안에서만 잡아 `state.error` 로 싣고, 다른 예외 타입은 그대로
+올라가 Django 500 경로로 간다.
 """
 
 from chat.graph.state import GraphState
-from chat.services.query_pipeline import QueryPipelineError, answer_question
+from chat.services.single_shot.pipeline import run_single_shot
+from chat.services.single_shot.types import QueryPipelineError
 
 
 def single_shot_node(state: GraphState) -> dict:
-    """state.question + state.history → answer_question → state.result 또는 state.error."""
+    """state.question + state.history → run_single_shot → state.result 또는 state.error."""
     try:
-        result = answer_question(
+        result = run_single_shot(
             state['question'],
             history=state.get('history', []),
         )
