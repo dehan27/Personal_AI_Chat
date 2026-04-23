@@ -28,9 +28,12 @@ COPY . .
 # 빌드 시점에 더미 SECRET_KEY로 실행 (실제 키는 런타임에 주입됨).
 RUN DJANGO_SECRET_KEY=build-time-dummy python manage.py collectstatic --noinput
 
-# 비루트 사용자로 실행 (컨테이너 탈출 위험 감소)
-RUN useradd --create-home --uid 1000 app \
- && chown -R app:app /app
+# 비루트 사용자로 실행 (컨테이너 탈출 위험 감소).
+# primary group 을 GID 100 (users) 로 두어 호스트 볼륨 ACL 과 일치시킴.
+# Debian 베이스 이미지에 users 그룹이 기본 존재하지만, 혹시 없는 경우 생성.
+RUN (getent group 100 > /dev/null || groupadd --gid 100 users) \
+ && useradd --create-home --uid 1000 --gid 100 app \
+ && chown -R app:100 /app
 USER app
 
 EXPOSE 8000

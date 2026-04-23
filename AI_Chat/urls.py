@@ -15,16 +15,16 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.static import serve
 
 urlpatterns = [
     path('', include('chat.urls')),
     path('admin/', admin.site.urls),
     path('bo/', include('bo.urls')),
+    # /media/<path> 파일 서빙.
+    # 이상적으로는 nginx 등 전용 웹서버가 담당하지만, 현재 배치(역방향 프록시
+    # → gunicorn)에선 앱이 직접 서빙. 아이콘·업로드된 PDF 미리보기 등에 필요.
+    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
 ]
-
-# 개발 환경에서 업로드 파일 서빙 (운영에서는 nginx 등이 담당)
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
