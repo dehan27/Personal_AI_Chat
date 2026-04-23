@@ -56,6 +56,12 @@ ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS', ['*'] if DEBUG else [])
 # 스킴 포함 전체 URL 로 지정 (예: https://your-domain.example).
 CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS', [])
 
+# 채팅 파이프라인을 LangGraph 기반 진입점으로 실행할지 여부 (2.0.0 Phase 2).
+# 기본 True — dev/운영 모두 새 경로로 운영해 이슈를 조기에 발견.
+# 운영에서 문제 발생 시 .env 에 USE_LANGGRAPH_PIPELINE=False 만 설정하고 재기동하면
+# 이전 direct 호출 경로로 즉시 롤백된다. Phase 3 에서 feature flag 는 제거 예정.
+USE_LANGGRAPH_PIPELINE = _env_bool('USE_LANGGRAPH_PIPELINE', True)
+
 
 # Application definition
 
