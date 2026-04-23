@@ -1,0 +1,109 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}Prompt 편집 · {{ entry.title }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .prompt-edit-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  .prompt-edit-meta-row {
+    display: flex;
+    gap: var(--space-3);
+    align-items: baseline;
+    font-size: var(--font-size-sm);
+  }
+  .prompt-edit-meta-label {
+    color: var(--color-text-secondary);
+    min-width: 80px;
+  }
+  .prompt-edit-meta-value {
+    color: var(--color-text-primary);
+  }
+  .prompt-edit-meta-path {
+    font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+    font-size: var(--font-size-xs);
+    background: var(--color-bg-secondary);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+  }
+  .prompt-edit-warning {
+    margin-bottom: var(--space-4);
+  }
+  .prompt-textarea {
+    width: 100%;
+    min-height: 420px;
+    padding: var(--space-4);
+    font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--color-text-primary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    resize: vertical;
+    outline: none;
+  }
+  .prompt-textarea:focus {
+    border-color: var(--color-accent-border);
+    box-shadow: 0 0 0 3px var(--color-accent-light);
+    background: var(--color-bg);
+  }
+  .prompt-edit-actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: flex-end;
+    margin-top: var(--space-4);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Prompt 편집</h1>
+    <p class="page-description">저장 즉시 프로세스 캐시가 갱신되어 다음 요청부터 새 프롬프트로 동작합니다.</p>
+  </div>
+  <a href="{% url 'bo:prompts' %}" class="btn">← 목록으로</a>
+</header>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% else %}alert-success{% endif %}">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endif %}
+
+<section class="card">
+  <h2 class="card-title">{{ entry.title }}</h2>
+
+  <div class="prompt-edit-meta">
+    <div class="prompt-edit-meta-row">
+      <span class="prompt-edit-meta-label">설명</span>
+      <span class="prompt-edit-meta-value">{{ entry.description }}</span>
+    </div>
+    <div class="prompt-edit-meta-row">
+      <span class="prompt-edit-meta-label">파일 경로</span>
+      <span class="prompt-edit-meta-path">{{ entry.relative_path }}</span>
+    </div>
+  </div>
+
+  <div class="alert alert-warning prompt-edit-warning">
+    ⚠ 저장 시 되돌리기 기능이 없습니다. 기존 문구가 필요하면 저장 전에 별도로 복사해두세요.
+  </div>
+
+  <form method="post" action="{% url 'bo:prompts_update' key=entry.key %}">
+    {% csrf_token %}
+    <textarea name="content" class="prompt-textarea" required>{{ content }}</textarea>
+    <div class="prompt-edit-actions">
+      <a href="{% url 'bo:prompts' %}" class="btn">취소</a>
+      <button type="submit" class="btn btn-primary">저장</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

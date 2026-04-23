@@ -25,4 +25,9 @@ urlpatterns = [
     path('qa/logs/<int:pk>/delete/', views.qa_log_delete, name='qa_log_delete'),
     path('qa/canonical/<int:pk>/update/', views.qa_canonical_update, name='qa_canonical_update'),
     path('qa/canonical/<int:pk>/delete/', views.qa_canonical_delete, name='qa_canonical_delete'),
+
+    # Prompt 관리 (registry 기반 allow-list 편집기)
+    path('prompts/', views.prompts_index, name='prompts'),
+    path('prompts/<slug:key>/', views.prompts_edit, name='prompts_edit'),
+    path('prompts/<slug:key>/update/', views.prompts_update, name='prompts_update'),
 ]

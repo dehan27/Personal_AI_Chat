@@ -1,4 +1,4 @@
-from chat.prompt.chat import SYSTEM_PROMPT
+from chat.services.prompt_loader import load_prompt
 
 # 세션에 저장할 대화 히스토리 키
 SESSION_HISTORY_KEY = 'chat_history'
@@ -8,7 +8,7 @@ SESSION_HISTORY_KEY = 'chat_history'
 MAX_HISTORY_MESSAGES = 20
 
 def initial_history():
-    return [{'role': 'system', 'content': SYSTEM_PROMPT}]
+    return [{'role': 'system', 'content': load_prompt('chat/system.md')}]
 
 
 def get_history(request):

@@ -1,0 +1,80 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}Prompt 관리{% endblock %}
+
+{% block extra_head %}
+<style>
+  .prompt-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .prompt-item {
+    padding: var(--space-5);
+  }
+  .prompt-item-title {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    margin: 0 0 var(--space-2);
+  }
+  .prompt-item-description {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    line-height: var(--line-height-normal);
+    margin: 0 0 var(--space-3);
+  }
+  .prompt-item-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .prompt-item-path {
+    font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    background: var(--color-bg-secondary);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Prompt 관리</h1>
+    <p class="page-description">챗봇이 사용하는 프롬프트 파일을 확인·편집합니다. 저장 즉시 반영되며, 별도 배포는 필요 없습니다.</p>
+  </div>
+</header>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% else %}alert-success{% endif %}">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% if entries %}
+  <div class="prompt-list">
+    {% for entry in entries %}
+      <article class="card prompt-item">
+        <h2 class="prompt-item-title">{{ entry.title }}</h2>
+        <p class="prompt-item-description">{{ entry.description }}</p>
+        <div class="prompt-item-meta">
+          <span class="prompt-item-path">{{ entry.relative_path }}</span>
+          <a href="{% url 'bo:prompts_edit' key=entry.key %}" class="btn btn-sm btn-primary">편집</a>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">등록된 프롬프트가 없습니다</div>
+    <div>chat/services/prompt_registry.py 에 항목을 추가하세요.</div>
+  </div>
+{% endif %}
+{% endblock %}

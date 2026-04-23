@@ -16,6 +16,10 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# 프롬프트 파일 루트. 기본은 repo 내부 assets/prompts/, 운영에서는 PROMPTS_DIR
+# 환경변수로 외부 마운트 경로를 줘서 재배포 없이 교체 가능.
+PROMPTS_DIR = Path(os.environ.get('PROMPTS_DIR', BASE_DIR / 'assets' / 'prompts'))
+
 
 # 환경변수 헬퍼
 def _env_bool(name: str, default: bool) -> bool:

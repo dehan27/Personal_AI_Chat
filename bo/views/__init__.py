@@ -1,5 +1,6 @@
 from .dashboard import dashboard
 from .files import files, upload, review, confirm, delete
+from .prompts import prompts_index, prompts_edit, prompts_update
 from .qa import (
     qa_root,
     qa_logs,
