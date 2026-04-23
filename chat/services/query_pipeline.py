@@ -10,14 +10,12 @@
 """
 
 import logging
-import os
 from typing import Dict, List, Optional
 
-from openai import OpenAI
-
 from chat.models import TokenUsage
-from chat.services.prompt_builder import build_messages
 from chat.services.qa_retriever import save_chat_log
+from chat.services.single_shot.llm import run_chat_completion
+from chat.services.single_shot.prompting import build_single_shot_messages
 from chat.services.single_shot.qa_cache import find_canonical_qa, resolve_cache_hit
 from chat.services.single_shot.retrieval import retrieve_documents
 from chat.services.single_shot.types import QueryPipelineError, QueryResult
@@ -75,27 +73,11 @@ def answer_question(
     if cached is not None:
         return cached
 
-    # 3) 프롬프트 조립
-    messages = build_messages(question, chunk_hits, qa_hits, history)
+    # 5) 프롬프트 조립
+    messages = build_single_shot_messages(question, chunk_hits, qa_hits, history)
 
-    # 4) OpenAI 호출
-    api_key = os.environ.get('OPENAI_API_KEY')
-    if not api_key:
-        raise QueryPipelineError('OPENAI_API_KEY가 설정되지 않았습니다.')
-    model = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
-
-    try:
-        client = OpenAI(api_key=api_key)
-        completion = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0,   # 동일 질문엔 동일 답변이 나오도록 (사실·수치 중심 챗봇)
-        )
-    except Exception as e:
-        raise QueryPipelineError(f'OpenAI 호출 실패: {e}') from e
-
-    reply = completion.choices[0].message.content or ''
-    usage = completion.usage
+    # 6) OpenAI 호출
+    reply, usage, model = run_chat_completion(messages)
 
     # 5) 토큰 사용 로그 (모든 호출에 대해 기록)
     TokenUsage.objects.create(
