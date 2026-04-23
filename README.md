@@ -402,6 +402,7 @@ DB는 Docker Compose가 자동으로 기동·연결하므로 **기본 사용엔 
 - 검색 임계값·캐시 기준 튜닝: `chat/services/query_pipeline.py` 상단 상수.
 - 허용 파일 형식 확장: `files/services/extractor.py`에 새 `_extract_xxx` 함수 추가 + `bo/views/files.py::ALLOWED_EXTS` 갱신.
 - 프롬프트 문구 수정: `assets/prompts/chat/*.md` 를 직접 편집하거나, BO `Prompt 관리` 페이지(`/bo/prompts/`)에서 수정. 운영에서는 `PROMPTS_DIR` 환경변수로 외부 마운트 경로에 프롬프트를 두면 재배포 없이 교체 가능.
+- 채팅 실행 경로 on/off: `USE_LANGGRAPH_PIPELINE` 환경변수. 기본 `True` 로 LangGraph 기반 `chat/graph/app.run_chat_graph` 를 타고, 문제 시 `False` 로 재기동하면 기존 `answer_question()` direct 호출 경로로 즉시 회귀 가능.
 
 ---
 
@@ -414,3 +415,4 @@ DB는 Docker Compose가 자동으로 기동·연결하므로 **기본 사용엔 
 |2026.04.22| 프로덕션 배포 파이프라인 구축<br>태그 푸시 시 GitHub Actions → GHCR → 운영 호스트 자동 배포 |[2026-04-22-deploy.md](resources/documents/2026-04-22-deploy.md)|
 |2026.04.23| 프로덕션 배포 핫픽스 시리즈<br>v0.3.1~v0.3.3: SSH PATH · 컨테이너 GID · /media/ 서빙 |[2026-04-23-deploy-hotfixes.md](resources/documents/2026-04-23-deploy-hotfixes.md)|
 |2026.04.23| 2.0.0 Phase 1 — Prompt 관리 분리<br>프롬프트를 파일로 외부화 + Prompt Loader + BO 편집 페이지 |[2026-04-23-phase1-prompt.md](resources/documents/2026-04-23-phase1-prompt.md)|
+|2026.04.23| 2.0.0 Phase 2 — LangGraph 적용<br>진입점을 `router → single_shot` 그래프로 전환 + `USE_LANGGRAPH_PIPELINE` 플래그 |[2026-04-23-phase2-langgraph.md](resources/documents/2026-04-23-phase2-langgraph.md)|

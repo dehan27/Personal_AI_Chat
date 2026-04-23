@@ -1,8 +1,10 @@
 import json
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
+from chat.graph.app import run_chat_graph
 from chat.services.history_service import (
     clear_history, get_history, save_history,
 )
@@ -24,9 +26,14 @@ def message(request):
     # 세션에서 과거 대화 불러오기 (RAG 컨텍스트와 별개)
     history = get_history(request)
 
-    # RAG 파이프라인 실행
+    # RAG 파이프라인 실행.
+    # Phase 2: USE_LANGGRAPH_PIPELINE=True 면 graph 진입점, False 면 기존 direct 호출.
+    # 두 경로 모두 QueryResult 반환 / QueryPipelineError raise 로 시그니처 동일.
     try:
-        result = answer_question(user_text, history=history)
+        if settings.USE_LANGGRAPH_PIPELINE:
+            result = run_chat_graph(user_text, history=history)
+        else:
+            result = answer_question(user_text, history=history)
     except QueryPipelineError as e:
         return JsonResponse({'error': str(e)}, status=502)
 
