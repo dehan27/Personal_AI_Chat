@@ -143,9 +143,15 @@ Step 3  feat: Extend GraphState with route_reason and matched_rules
 Step 4  refactor: Wire router_node to rule-based question_router
 Step 5  feat: Route workflow/agent intents through single_shot until later phases land
 Step 6  docs: Document Phase 4-1 router with verified example classifications
+Step 7  feat: Configure app logging so INFO messages reach the console
 ```
 
 각 커밋 직후 `manage.py check` + graph 호출 smoke 통과.
+
+### Step 7 보강 — 왜 LOGGING 을 건드렸나
+router_node 의 fallback INFO 로그가 실제로 찍히지 않는 문제가 최종 브라우저 검증에서 드러났다. Django 기본 LOGGING 은 `django.*` 로거만 콘솔로 보내고, 우리 앱 로거(`chat.*` / `bo.*` / `files.*`)는 root 로 올라가 WARNING 이상만 통과. 결과적으로 Phase 4-1 의 observability 약속(servers log 에서 의도된 route 확인)이 거짓말이 되는 상태였다.
+
+`AI_Chat/settings.py` 에 최소 LOGGING dict 를 추가해 3 앱의 INFO 를 console handler 로 보낸다. 포매터는 `'{levelname} {name}: {message}'`. 부수 효과로 Phase 3 에서 추가했던 `chat.services.single_shot.retrieval` / `qa_cache` 의 `logger.info` 라인도 이제 `docker compose logs web` 에서 보인다.
 
 ---
 
