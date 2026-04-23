@@ -26,8 +26,11 @@ class GraphState(TypedDict, total=False):
     history: list[dict]      # 세션 히스토리 [{'role':..., 'content':...}, ...]
 
     # ─── router 결과 ──────────────────────────────────
-    route: str               # Phase 2 에서는 'single_shot' 만.
-                             # Phase 4 에서 'workflow' / 'agent' 등 추가 예정.
+    # Phase 4-1 기준: 'single_shot' / 'workflow' / 'agent' (chat.graph.routes 참조).
+    # workflow/agent 는 현재 conditional edge 에서 single_shot 노드로 fallback.
+    route: str
+    route_reason: str            # 'workflow_keyword' / 'agent_keyword' / 'default'
+    matched_rules: list[str]     # 매치된 키워드(있을 경우)
 
     # ─── 실행 결과 ────────────────────────────────────
     result: Optional[QueryResult]
