@@ -137,34 +137,61 @@ class RouterRule(models.Model):
 
     name = models.CharField(
         max_length=100,
-        help_text='운영자 식별용 이름 (예: "며칠 보강", "복지포인트 오분류 제외")',
+        help_text=(
+            '이 규칙을 알아볼 수 있는 이름을 적어주세요.\n'
+            '예) "며칠 질문 보강", "복지포인트 오분류 제외"'
+        ),
     )
     route = models.CharField(
         max_length=20,
         choices=Route.choices,
-        help_text='매치 시 보낼 route',
+        help_text=(
+            '이 규칙에 걸린 질문을 어떤 방식으로 처리할지 선택하세요.\n'
+            '• single-shot — 바로 답변\n'
+            '• workflow — 정해진 계산 흐름\n'
+            '• agent — 상황 판단·비교'
+        ),
     )
     match_type = models.CharField(
         max_length=20,
         choices=MatchType.choices,
         default=MatchType.CONTAINS,
+        help_text=(
+            '키워드를 질문과 어떻게 비교할지 정합니다.\n'
+            '\n'
+            '• 포함 — 질문 안에 키워드가 조각으로라도 들어 있으면 매치\n'
+            '• 정확히 일치 — 질문이 키워드와 글자 그대로 똑같을 때만 매치\n'
+            '• 정규식 — 키워드를 패턴 문법으로 해석해 매치\n'
+            '• 제외 — 이 키워드가 있으면 오히려 규칙을 적용하지 않음'
+        ),
     )
     pattern = models.CharField(
         max_length=256,
-        help_text='매칭할 키워드/패턴 (match_type 에 따라 해석)',
+        help_text=(
+            '질문에 포함되어 있으면 규칙이 걸리는 단어/문구를 적으세요.\n'
+            '예) "퇴직금" → "퇴직금 얼마야?" 매치\n'
+            '\n'
+            '※ 앞뒤에 /, #, 따옴표 같은 기호를 붙이지 마세요.\n'
+            '※ 띄어쓰기도 그대로 비교합니다 ("연차 계산"과 "연차계산"은 다름).\n'
+            '※ 변형이 많으면 짧게 쪼개서 여러 규칙으로 등록하는 편이 안전합니다.'
+        ),
     )
     priority = models.IntegerField(
         default=100,
-        help_text='숫자가 클수록 먼저 평가. 기본값 100, 매우 중요한 rule 은 200+ 권장',
+        help_text=(
+            '숫자가 클수록 먼저 평가됩니다.\n'
+            '• 일반 규칙: 100\n'
+            '• 반드시 우선 적용할 규칙: 200 이상'
+        ),
     )
     enabled = models.BooleanField(
         default=True,
-        help_text='체크 해제하면 router 가 이 rule 을 건너뜀 (삭제 없이 무력화)',
+        help_text=(
+            '체크를 풀면 이 규칙을 무시합니다.\n'
+            '(삭제하지 않고 잠시 꺼두는 용도)'
+        ),
     )
-    description = models.TextField(
-        blank=True,
-        help_text='이 rule 을 추가한 이유·배경 메모',
-    )
+    description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

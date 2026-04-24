@@ -19,7 +19,11 @@ from chat.services.question_router import AGENT_KEYWORDS, WORKFLOW_KEYWORDS
 
 
 class RouterRuleForm(forms.ModelForm):
-    """새 rule 생성 / 기존 rule 편집 공용 폼."""
+    """새 rule 생성 / 기존 rule 편집 공용 폼.
+
+    모든 위젯에 bo.css 의 `.input` 클래스를 주입해 디자인 가이드 Form 규격을
+    그대로 적용한다 (guide §Form / bo.css FORM 섹션).
+    """
 
     class Meta:
         model = RouterRule
@@ -33,7 +37,13 @@ class RouterRuleForm(forms.ModelForm):
             'description',
         )
         widgets = {
-            'description': forms.Textarea(attrs={'rows': 3}),
+            'name':        forms.TextInput(attrs={'class': 'input'}),
+            'route':       forms.Select(attrs={'class': 'input'}),
+            'match_type':  forms.Select(attrs={'class': 'input'}),
+            'pattern':     forms.TextInput(attrs={'class': 'input'}),
+            'priority':    forms.NumberInput(attrs={'class': 'input'}),
+            'description': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
+            # enabled 는 체크박스 — `.input` 을 적용하면 스타일이 깨진다.
         }
 
 
@@ -59,7 +69,7 @@ def router_rules_new(request):
         form = RouterRuleForm(request.POST)
         if form.is_valid():
             rule = form.save()
-            messages.success(request, f'Rule "{rule.name}" 를 추가했습니다.')
+            messages.success(request, f'규칙 "{rule.name}" 를 추가했습니다.')
             return redirect('bo:router_rules')
     else:
         form = RouterRuleForm()
@@ -79,7 +89,7 @@ def router_rules_edit(request, pk: int):
         form = RouterRuleForm(request.POST, instance=rule)
         if form.is_valid():
             form.save()
-            messages.success(request, f'Rule "{rule.name}" 를 저장했습니다.')
+            messages.success(request, f'규칙 "{rule.name}" 를 저장했습니다.')
             return redirect('bo:router_rules')
     else:
         form = RouterRuleForm(instance=rule)
@@ -100,7 +110,7 @@ def router_rules_toggle(request, pk: int):
     rule.enabled = not rule.enabled
     rule.save(update_fields=['enabled', 'updated_at'])
     state = '활성화' if rule.enabled else '비활성화'
-    messages.success(request, f'Rule "{rule.name}" 를 {state}했습니다.')
+    messages.success(request, f'규칙 "{rule.name}" 를 {state}했습니다.')
     return redirect('bo:router_rules')
 
 
@@ -110,5 +120,5 @@ def router_rules_delete(request, pk: int):
     rule = get_object_or_404(RouterRule, pk=pk)
     name = rule.name
     rule.delete()
-    messages.success(request, f'Rule "{name}" 를 삭제했습니다.')
+    messages.success(request, f'규칙 "{name}" 를 삭제했습니다.')
     return redirect('bo:router_rules')

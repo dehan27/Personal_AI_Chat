@@ -39,20 +39,20 @@
         <thead>
           <tr>
             <th>날짜</th>
-            <th class="text-right">호출</th>
-            <th class="text-right">입력 토큰</th>
-            <th class="text-right">출력 토큰</th>
-            <th class="text-right">총 토큰</th>
+            <th>호출</th>
+            <th>입력 토큰</th>
+            <th>출력 토큰</th>
+            <th>총 토큰</th>
           </tr>
         </thead>
         <tbody>
           {% for row in rows %}
             <tr>
               <td>{{ row.date|date:"Y-m-d" }}</td>
-              <td class="text-right">{{ row.calls }}</td>
-              <td class="text-right">{{ row.prompt|default:0 }}</td>
-              <td class="text-right">{{ row.completion|default:0 }}</td>
-              <td class="text-right">{{ row.total|default:0 }}</td>
+              <td>{{ row.calls }}</td>
+              <td>{{ row.prompt|default:0 }}</td>
+              <td>{{ row.completion|default:0 }}</td>
+              <td>{{ row.total|default:0 }}</td>
             </tr>
           {% endfor %}
         </tbody>

@@ -71,7 +71,7 @@
                 {% endif %}
               </td>
               <td>{{ doc.uploaded_at|date:"Y-m-d H:i" }}</td>
-              <td class="text-right">
+              <td>
                 {% if doc.status == 'reviewing' or doc.status == 'failed' %}
                   <a href="{% url 'bo:review' doc.pk %}" class="btn btn-sm">검토</a>
                 {% endif %}

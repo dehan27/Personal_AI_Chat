@@ -4,52 +4,13 @@
 
 {% block extra_head %}
 <style>
-  .rule-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-size-sm);
-  }
-  .rule-table th {
-    background: var(--color-bg-secondary);
-    text-align: left;
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-secondary);
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-  }
-  .rule-table td {
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-    vertical-align: middle;
-  }
-  .rule-row-disabled td {
-    opacity: 0.55;
-  }
+  /* 헤더 우측 버튼이 좁은 폭에서 줄바꿈되지 않게 */
+  .page-header .btn { white-space: nowrap; }
 
-  .route-badge {
-    display: inline-block;
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    padding: 2px var(--space-2);
-    border-radius: var(--radius-sm);
-    border: 1px solid transparent;
-  }
-  .route-badge-single_shot {
-    background: var(--color-accent-subtle);
-    color: var(--color-accent-text);
-    border-color: var(--color-accent-border);
-  }
-  .route-badge-workflow {
-    background: var(--color-info-light, #eaf4fc);
-    color: var(--color-info, hsl(200,70%,44%));
-    border-color: var(--color-info-border, hsl(200,70%,82%));
-  }
-  .route-badge-agent {
-    background: var(--color-warning-light, #fdf4e0);
-    color: var(--color-warning, hsl(38,90%,42%));
-    border-color: var(--color-warning-border, hsl(38,90%,78%));
-  }
+  /* 규칙 비활성화 행 */
+  .rule-row-disabled td { opacity: 0.55; }
 
+  /* 패턴 인라인 코드 칩 (가이드에 해당 컴포넌트 없음) */
   .rule-pattern {
     font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
     font-size: var(--font-size-xs);
@@ -59,18 +20,11 @@
     color: var(--color-text-primary);
   }
 
-  .rule-actions {
-    display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-  }
+  /* 행 내 액션 버튼 정렬 */
+  .rule-actions { display: flex; gap: var(--space-2); justify-content: center; }
   .rule-actions form { display: inline; }
 
-  /* 헤더 우측 버튼이 좁은 폭에서 줄바꿈되지 않게 */
-  .page-header .btn {
-    white-space: nowrap;
-  }
-
+  /* 기본 키워드 섹션 (collapsible details) — 가이드에 해당 컴포넌트 없음 */
   .defaults-block {
     margin-top: var(--space-6);
     background: var(--color-bg-secondary);
@@ -91,35 +45,21 @@
     margin-right: var(--space-2);
     transition: transform var(--transition-base);
   }
-  .defaults-block[open] > summary::before {
-    transform: rotate(90deg);
-  }
-  .defaults-block > summary small {
-    margin-left: var(--space-2);
-    color: var(--color-text-muted);
-    font-weight: var(--font-weight-regular);
-    font-size: var(--font-size-xs);
-  }
+  .defaults-block[open] > summary::before { transform: rotate(90deg); }
+
   .defaults-body {
     margin-top: var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-3);
   }
-  .defaults-group-label {
-    display: inline-block;
-    margin-right: var(--space-3);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-secondary);
-    min-width: 72px;
-  }
-  .defaults-keyword-row {
+  .defaults-card-header { margin-bottom: var(--space-3); }
+  .defaults-card-keywords {
     display: flex;
-    align-items: flex-start;
-    gap: var(--space-2);
     flex-wrap: wrap;
+    gap: var(--space-2);
   }
+  /* 키워드 태그 (가이드에 해당 컴포넌트 없음) */
   .kw-tag {
     display: inline-block;
     font-size: var(--font-size-xs);
@@ -136,16 +76,6 @@
     color: var(--color-text-muted);
     line-height: var(--line-height-normal);
   }
-
-  .rules-empty-hint {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    background: var(--color-bg-secondary);
-    border: 1px dashed var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-5);
-    line-height: var(--line-height-normal);
-  }
 </style>
 {% endblock %}
 
@@ -153,9 +83,9 @@
 <header class="page-header">
   <div>
     <h1 class="page-title">라우팅 관리</h1>
-    <p class="page-description">질문을 <code>single_shot / workflow / agent</code> 중 어디로 보낼지 결정하는 DB rule.<br>매 요청마다 priority 높은 순으로 평가되고, 매치되는 rule 이 없으면 코드 내장 키워드(<code>WORKFLOW_KEYWORDS</code> / <code>AGENT_KEYWORDS</code>)가 기본 동작을 맡습니다.</p>
+    <p class="page-description">질문을 어떤 방식(<code>single_shot / workflow / agent</code>)으로 처리할지 결정하는 규칙을 관리합니다.</p>
   </div>
-  <a href="{% url 'bo:router_rules_new' %}" class="btn btn-primary">+ 새 rule</a>
+  <a href="{% url 'bo:router_rules_new' %}" class="btn btn-primary">+ 새 규칙</a>
 </header>
 
 {% if messages %}
@@ -167,87 +97,93 @@
 {% endif %}
 
 {% if rules %}
-  <section class="card">
-    <table class="rule-table">
-      <thead>
-        <tr>
-          <th>이름</th>
-          <th>route</th>
-          <th>매치</th>
-          <th>패턴</th>
-          <th style="text-align:right;">우선순위</th>
-          <th>상태</th>
-          <th style="text-align:right;">동작</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for rule in rules %}
-          <tr class="{% if not rule.enabled %}rule-row-disabled{% endif %}">
-            <td>
-              <div style="font-weight: var(--font-weight-medium);">{{ rule.name }}</div>
-              {% if rule.description %}
-                <div style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 2px;">{{ rule.description }}</div>
-              {% endif %}
-            </td>
-            <td><span class="route-badge route-badge-{{ rule.route }}">{{ rule.get_route_display }}</span></td>
-            <td style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">{{ rule.get_match_type_display }}</td>
-            <td><span class="rule-pattern">{{ rule.pattern }}</span></td>
-            <td style="text-align:right; font-variant-numeric: tabular-nums;">{{ rule.priority }}</td>
-            <td>
-              <form method="post" action="{% url 'bo:router_rules_toggle' rule.pk %}" style="display:inline;">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-sm" title="클릭하면 {% if rule.enabled %}비활성화{% else %}활성화{% endif %}">
-                  {% if rule.enabled %}활성{% else %}비활성{% endif %}
-                </button>
-              </form>
-            </td>
-            <td>
-              <div class="rule-actions">
-                <a href="{% url 'bo:router_rules_edit' rule.pk %}" class="btn btn-sm">편집</a>
-                <form method="post" action="{% url 'bo:router_rules_delete' rule.pk %}"
-                      onsubmit="return confirm('이 rule 을 삭제하시겠습니까?');">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-sm btn-danger">삭제</button>
-                </form>
-              </div>
-            </td>
+  <section class="card" style="padding: 0;">
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>이름</th>
+            <th>처리 방식</th>
+            <th>매치</th>
+            <th>키워드</th>
+            <th>우선순위</th>
+            <th>상태</th>
+            <th>동작</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for rule in rules %}
+            <tr class="{% if not rule.enabled %}rule-row-disabled{% endif %}">
+              <td>
+                <div style="font-weight: var(--font-weight-medium);">{{ rule.name }}</div>
+                {% if rule.description %}
+                  <div style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 2px;">{{ rule.description }}</div>
+                {% endif %}
+              </td>
+              <td>
+                {% if rule.route == 'workflow' %}<span class="badge badge-info">workflow</span>
+                {% elif rule.route == 'agent' %}<span class="badge badge-warning">agent</span>
+                {% else %}<span class="badge">single-shot</span>{% endif %}
+              </td>
+              <td style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">{{ rule.get_match_type_display }}</td>
+              <td><span class="rule-pattern">{{ rule.pattern }}</span></td>
+              <td style="font-variant-numeric: tabular-nums;">{{ rule.priority }}</td>
+              <td>
+                <form method="post" action="{% url 'bo:router_rules_toggle' rule.pk %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm" title="클릭하면 {% if rule.enabled %}비활성화{% else %}활성화{% endif %}">
+                    {% if rule.enabled %}활성{% else %}비활성{% endif %}
+                  </button>
+                </form>
+              </td>
+              <td>
+                <div class="rule-actions">
+                  <a href="{% url 'bo:router_rules_edit' rule.pk %}" class="btn btn-sm">편집</a>
+                  <form method="post" action="{% url 'bo:router_rules_delete' rule.pk %}"
+                        onsubmit="return confirm('이 규칙을 삭제하시겠습니까?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 {% else %}
-  <div class="rules-empty-hint">
-    등록된 rule 이 없습니다. 현재 분류는 코드 내장 키워드(<code>chat/services/question_router.py</code>)가 담당하며, 기본 동작이 필요한 질문은 그대로 작동합니다.
-    <br><br>
-    오분류되는 질문이 있거나 새 패턴을 보강하고 싶을 때 <strong>+ 새 rule</strong> 로 override 를 추가하세요.
+  <div class="empty-state">
+    <div class="empty-state-title">등록된 규칙이 없습니다</div>
+    <div>기본 동작이 필요한 질문은 그대로 작동합니다.</div>
   </div>
 {% endif %}
 
 <details class="defaults-block">
-  <summary>
-    기본 키워드 (코드 내장 · 읽기 전용)
-    <small>DB rule 이 매치되지 않을 때 분류를 담당</small>
-  </summary>
+  <summary>기본 키워드</summary>
   <div class="defaults-body">
-    <div class="defaults-keyword-row">
-      <span class="defaults-group-label">
-        <span class="route-badge route-badge-workflow">workflow</span>
-      </span>
-      {% for kw in workflow_keywords %}
-        <span class="kw-tag">{{ kw }}</span>
-      {% endfor %}
+    <div class="card">
+      <div class="defaults-card-header">
+        <span class="badge badge-info">workflow</span>
+      </div>
+      <div class="defaults-card-keywords">
+        {% for kw in workflow_keywords %}
+          <span class="kw-tag">{{ kw }}</span>
+        {% endfor %}
+      </div>
     </div>
-    <div class="defaults-keyword-row">
-      <span class="defaults-group-label">
-        <span class="route-badge route-badge-agent">agent</span>
-      </span>
-      {% for kw in agent_keywords %}
-        <span class="kw-tag">{{ kw }}</span>
-      {% endfor %}
+    <div class="card">
+      <div class="defaults-card-header">
+        <span class="badge badge-warning">agent</span>
+      </div>
+      <div class="defaults-card-keywords">
+        {% for kw in agent_keywords %}
+          <span class="kw-tag">{{ kw }}</span>
+        {% endfor %}
+      </div>
     </div>
     <div class="defaults-note">
-      이 키워드는 코드(<code>chat/services/question_router.py</code>)에 있으며 BO 에서 수정할 수 없습니다. 오분류·누락 발견 시 위 목록에 DB rule 을 추가해 override 하거나, 영구 반영이 필요하면 코드 상수를 편집하세요.
+      이 키워드들은 기본 키워드로 수정할 수 없습니다. 오분류·누락 발견 시 위 목록에 새 규칙을 추가하세요.
     </div>
   </div>
 </details>
