@@ -202,6 +202,62 @@ class WorkflowNodeRewriterIntegrationTests(SimpleTestCase):
         called_query = retrieve.call_args.args[0]
         self.assertEqual(called_query, '경조사 표에서 가장 큰 경조금 금액')
 
+    def test_table_lookup_end_to_end_ok_reply(self):
+        """router 이후 workflow_node → extractor → dispatch → reply 전 체인 smoke.
+
+        retrieve_documents 와 LLM 만 mock, 나머지는 실제 경로를 그대로 태움.
+        """
+        from types import SimpleNamespace
+
+        class _Usage:
+            prompt_tokens = 80
+            completion_tokens = 20
+            total_tokens = 100
+
+        table_chunk = SimpleNamespace(
+            content='| 항목 | 금액 |\n|---|---|\n| 본인 상 | 500만원 |\n',
+            document_name='경조사_규정.pdf',
+        )
+        llm_reply = (
+            '{"answer": "500만원", "source_document": "경조사_규정.pdf",'
+            ' "matched_row": "본인 상", "matched_column": "금액"}'
+        )
+
+        state = {
+            'question': '표에서 본인 상 경조금 알려줘',
+            'history': [],
+            'workflow_key': 'table_lookup',
+        }
+        with patch(
+            'chat.workflows.domains.general.table_lookup.retrieve_documents',
+            return_value=[table_chunk],
+        ), patch(
+            'chat.workflows.domains.general.table_lookup.run_chat_completion',
+            return_value=(llm_reply, _Usage(), 'gpt-4o-mini'),
+        ), patch(
+            'chat.workflows.domains.general.table_lookup.load_prompt',
+            return_value='PROMPT',
+        ):
+            out = workflow_node(state)
+
+        self.assertIn('본인 상 · 금액: 500만원', out['result'].reply)
+        self.assertIn('(출처: 경조사_규정.pdf)', out['result'].reply)
+
+    def test_table_lookup_not_found_end_to_end_reply(self):
+        """retrieve_documents 가 빈 리스트 → NOT_FOUND reply 가 reply 문구로 이어지는지."""
+        state = {
+            'question': '표에서 본인 상 경조금 알려줘',
+            'history': [],
+            'workflow_key': 'table_lookup',
+        }
+        with patch(
+            'chat.workflows.domains.general.table_lookup.retrieve_documents',
+            return_value=[],
+        ):
+            out = workflow_node(state)
+        self.assertIn('관련 문서', out['result'].reply)
+        self.assertNotIn('지원하지 않는', out['result'].reply)
+
     def test_explicit_workflow_input_bypasses_rewriter(self):
         state = {
             'question': 'anything',
