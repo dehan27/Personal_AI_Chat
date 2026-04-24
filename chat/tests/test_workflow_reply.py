@@ -73,13 +73,56 @@ class BuildReplyTests(SimpleTestCase):
         self.assertIn('올바르지 않습니다', reply)
         self.assertIn('시작일이 종료일보다 뒤', reply)
 
-    def test_unsupported_shows_reason(self):
+    def test_unsupported_passes_reason_through(self):
+        # Phase 6-3: reason 이 있으면 그대로 pass-through.
         result = WorkflowResult.unsupported('등록되지 않은 workflow_key 입니다: \'ghost\'')
         reply = build_reply_from_result(result, workflow_key='ghost')
-        self.assertIn('지원하지 않는', reply)
-        self.assertIn('ghost', reply)
+        self.assertEqual(reply, "등록되지 않은 workflow_key 입니다: 'ghost'")
 
     def test_unsupported_without_reason_uses_default(self):
         result = WorkflowResult(status=WorkflowStatus.UNSUPPORTED)
         reply = build_reply_from_result(result, workflow_key='')
-        self.assertEqual(reply, '현재 지원하지 않는 작업입니다.')
+        self.assertIn('지원하는 workflow', reply)
+
+    # Phase 6-3: NOT_FOUND / UPSTREAM_ERROR 가 각기 다른 기본 문구를 돌려주는지.
+
+    def test_not_found_passes_reason_through(self):
+        result = WorkflowResult.not_found('질문에 맞는 표를 찾지 못했습니다. 관련 문서가 업로드되어 있는지 확인해 주세요.')
+        reply = build_reply_from_result(result, workflow_key='table_lookup')
+        self.assertEqual(reply, '질문에 맞는 표를 찾지 못했습니다. 관련 문서가 업로드되어 있는지 확인해 주세요.')
+
+    def test_not_found_without_reason_uses_default(self):
+        result = WorkflowResult(status=WorkflowStatus.NOT_FOUND)
+        reply = build_reply_from_result(result, workflow_key='table_lookup')
+        self.assertIn('자료를 찾지 못했습니다', reply)
+        self.assertNotIn('지원하지 않는', reply)
+
+    def test_upstream_error_passes_reason_through(self):
+        result = WorkflowResult.upstream_error('표 해석 중 일시적인 오류가 발생했습니다.')
+        reply = build_reply_from_result(result, workflow_key='table_lookup')
+        self.assertIn('일시적', reply)
+
+    def test_upstream_error_without_reason_uses_default(self):
+        result = WorkflowResult(status=WorkflowStatus.UPSTREAM_ERROR)
+        reply = build_reply_from_result(result, workflow_key='table_lookup')
+        self.assertIn('잠시 후 다시 시도', reply)
+
+    # Phase 6-3: table_lookup OK 포맷.
+
+    def test_ok_table_lookup_full_metadata(self):
+        result = WorkflowResult.ok(
+            '500만원',
+            details={
+                'matched_row': '본인 상',
+                'matched_column': '경조금',
+                'source_document': '경조사_규정.pdf',
+            },
+        )
+        reply = build_reply_from_result(result, workflow_key='table_lookup')
+        self.assertIn('본인 상 · 경조금: 500만원', reply)
+        self.assertIn('(출처: 경조사_규정.pdf)', reply)
+
+    def test_ok_table_lookup_without_metadata_shows_value_only(self):
+        result = WorkflowResult.ok('42')
+        reply = build_reply_from_result(result, workflow_key='table_lookup')
+        self.assertEqual(reply, '42')

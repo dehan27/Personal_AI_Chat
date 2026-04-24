@@ -43,11 +43,20 @@ def build_reply_from_result(
             return f'입력이 올바르지 않습니다.\n{lines}'
         return '입력이 올바르지 않습니다.'
 
-    # UNSUPPORTED
+    # Phase 6-3: NOT_FOUND / UPSTREAM_ERROR / UNSUPPORTED 세 상태는 모두
+    # details['reason'] 이 있으면 그걸 pass-through 한다. workflow 쪽이 문맥상
+    # 친절한 문구를 직접 담도록 유도하는 원칙. reason 이 비어있을 때만 status
+    # 별 기본 문구를 돌려준다.
     reason = result.details.get('reason') if result.details else None
-    if reason:
-        return f'현재 지원하지 않는 작업입니다. ({reason})'
-    return '현재 지원하지 않는 작업입니다.'
+
+    if status == WorkflowStatus.NOT_FOUND:
+        return reason or '요청에 맞는 자료를 찾지 못했습니다. 관련 문서가 업로드되어 있는지 확인해 주세요.'
+
+    if status == WorkflowStatus.UPSTREAM_ERROR:
+        return reason or '일시적인 오류로 이번 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+
+    # UNSUPPORTED
+    return reason or '이 질문은 지원하는 workflow 에 해당하지 않습니다. 다른 방식으로 물어봐 주세요.'
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +95,26 @@ def _ok_amount_calculation(result: WorkflowResult) -> str:
     return f'{label}{particle} {value_str} 입니다.'
 
 
+def _ok_table_lookup(result: WorkflowResult) -> str:
+    """표 조회 결과 — 값 + matched row·column + 출처 순."""
+    details = result.details or {}
+    row = (details.get('matched_row') or '').strip()
+    col = (details.get('matched_column') or '').strip()
+    src = (details.get('source_document') or '').strip()
+
+    body = str(result.value)
+    if row and col:
+        body = f'{row} · {col}: {result.value}'
+    elif row:
+        body = f'{row}: {result.value}'
+    elif col:
+        body = f'{col}: {result.value}'
+
+    if src:
+        body = f'{body}\n\n(출처: {src})'
+    return body
+
+
 def _ok_default(result: WorkflowResult) -> str:
     return f'결과: {result.value}'
 
@@ -93,6 +122,7 @@ def _ok_default(result: WorkflowResult) -> str:
 _ok_formatters: Mapping[str, Callable[[WorkflowResult], str]] = {
     'date_calculation': _ok_date_calculation,
     'amount_calculation': _ok_amount_calculation,
+    'table_lookup': _ok_table_lookup,
 }
 
 
