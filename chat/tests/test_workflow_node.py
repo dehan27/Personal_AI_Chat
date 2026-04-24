@@ -80,6 +80,27 @@ class WorkflowNodeTests(SimpleTestCase):
         self.assertIn('2025-02-01', out['result'].reply)
         self.assertIn('31일', out['result'].reply)
 
+    def test_amount_calculation_end_to_end_from_natural_language(self):
+        # amount_calculation + 자연어 평균 질문이 실제로 답까지 이어지는지 확인.
+        state = {
+            'question': '1,000원, 2,000원, 3,000원 평균이 얼마야?',
+            'history': [],
+            'workflow_key': 'amount_calculation',
+        }
+        out = workflow_node(state)
+        self.assertIn('평균', out['result'].reply)
+        self.assertIn('2,000.00', out['result'].reply)
+
+    def test_amount_calculation_sum_default_op(self):
+        state = {
+            'question': '100 200 300 합계는?',
+            'history': [],
+            'workflow_key': 'amount_calculation',
+        }
+        out = workflow_node(state)
+        self.assertIn('합계', out['result'].reply)
+        self.assertIn('600', out['result'].reply)
+
     def test_extractor_token_usage_recorded_when_llm_invoked(self):
         # LLM fallback 이 실제로 돈 상황을 mock 으로 재현하고, record_token_usage
         # 가 한 번 호출되는지 확인.

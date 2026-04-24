@@ -99,15 +99,18 @@ def extract(
 
     # 3) date — schema 선언 순서대로 앞에서부터 배정.
     date_fields = _pick_fields_by_type(schema, 'date')
-    date_values, _ = _find_dates(text, limit=len(date_fields))
+    date_values, date_spans = _find_dates(text, limit=len(date_fields))
     for spec_name, value in zip(date_fields, date_values):
         extracted[spec_name] = value
 
     # 4) enum — 자연어 토큰이 매치되는 첫 키로 정규화.
+    # 이 때 날짜·money 구간은 마스킹해서 "2024년" 안의 "년" 같은 토큰이 오답으로
+    # 들어오는 걸 막는다.
+    enum_masked_text = _mask_spans(text, list(money_spans) + list(date_spans))
     for name, spec in schema.items():
         if spec.type != 'enum' or name in extracted:
             continue
-        matched = _match_enum(text, spec.enum_values)
+        matched = _match_enum(enum_masked_text, spec.enum_values)
         if matched is not None:
             extracted[name] = matched
 

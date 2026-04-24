@@ -22,6 +22,33 @@ class BuildReplyTests(SimpleTestCase):
         self.assertIn('2025-02-01', reply)
         self.assertIn('31일', reply)
 
+    def test_ok_amount_calculation_sum(self):
+        result = WorkflowResult.ok(
+            6000,
+            details={'op': 'sum', 'values': [1000, 2000, 3000], 'count': 3},
+        )
+        reply = build_reply_from_result(result, workflow_key='amount_calculation')
+        self.assertIn('합계', reply)
+        self.assertIn('6,000', reply)
+
+    def test_ok_amount_calculation_average_formats_float(self):
+        result = WorkflowResult.ok(
+            216.6666666,
+            details={'op': 'average', 'values': [100, 200, 350], 'count': 3},
+        )
+        reply = build_reply_from_result(result, workflow_key='amount_calculation')
+        self.assertIn('평균', reply)
+        self.assertIn('216.67', reply)
+
+    def test_ok_amount_calculation_diff(self):
+        result = WorkflowResult.ok(
+            40,
+            details={'op': 'diff', 'values': [10, 50, 30], 'count': 3},
+        )
+        reply = build_reply_from_result(result, workflow_key='amount_calculation')
+        self.assertIn('차이', reply)
+        self.assertIn('40', reply)
+
     def test_ok_unknown_key_falls_back_to_default_formatter(self):
         result = WorkflowResult.ok(42)
         reply = build_reply_from_result(result, workflow_key='unknown')
