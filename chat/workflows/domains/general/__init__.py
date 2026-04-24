@@ -5,11 +5,12 @@
 
 Phase 6-1: `date_calculation`
 Phase 6-2: `amount_calculation`
-Phase 6-3: `table_lookup` (예정)
+Phase 6-3: `table_lookup`
 """
 
 from chat.workflows.domains.general import date_calculation    # noqa: F401  (register 부작용)
 from chat.workflows.domains.general import amount_calculation  # noqa: F401  (register 부작용)
+from chat.workflows.domains.general import table_lookup        # noqa: F401  (register 부작용)
 
 
 __all__: list[str] = []
