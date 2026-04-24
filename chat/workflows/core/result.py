@@ -76,12 +76,19 @@ class WorkflowStatus(str, Enum):
     """domain workflow 의 최종 상태.
 
     문자열 상속이라 JSON / 로그 / DB 어디에 실어도 값(`"ok"` 등)이 그대로 쓰인다.
+
+    Phase 6-3 에서 `NOT_FOUND` / `UPSTREAM_ERROR` 가 추가되면서 `UNSUPPORTED` 는
+    "이 workflow 범위 밖(미등록 key 등)" 의 원 의미로 환원됐다. "자료 없음" 은
+    `NOT_FOUND`, "일시 장애" 는 `UPSTREAM_ERROR` 로 분리해 reply·관측·향후
+    재시도 정책을 서로 다르게 걸 수 있게 한다.
     """
 
     OK = 'ok'
     MISSING_INPUT = 'missing_input'
     INVALID_INPUT = 'invalid_input'
     UNSUPPORTED = 'unsupported'
+    NOT_FOUND = 'not_found'
+    UPSTREAM_ERROR = 'upstream_error'
 
 
 @dataclass(frozen=True)
@@ -151,5 +158,21 @@ class WorkflowResult:
     def unsupported(cls, reason: str) -> 'WorkflowResult':
         return cls(
             status=WorkflowStatus.UNSUPPORTED,
+            details=MappingProxyType({'reason': reason}),
+        )
+
+    @classmethod
+    def not_found(cls, reason: str) -> 'WorkflowResult':
+        """workflow 가 정상 실행됐지만 질문에 맞는 데이터를 못 찾음."""
+        return cls(
+            status=WorkflowStatus.NOT_FOUND,
+            details=MappingProxyType({'reason': reason}),
+        )
+
+    @classmethod
+    def upstream_error(cls, reason: str) -> 'WorkflowResult':
+        """LLM / 네트워크 / 파서 등 일시적 실행 실패 — 재시도 대상."""
+        return cls(
+            status=WorkflowStatus.UPSTREAM_ERROR,
             details=MappingProxyType({'reason': reason}),
         )

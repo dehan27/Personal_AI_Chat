@@ -81,6 +81,23 @@ class WorkflowResultTests(SimpleTestCase):
         self.assertEqual(r.status, WorkflowStatus.UNSUPPORTED)
         self.assertEqual(r.details['reason'], 'no domain handler yet')
 
+    def test_not_found_factory(self):
+        # Phase 6-3: 자료에서 매치 실패.
+        r = WorkflowResult.not_found('질문에 맞는 자료를 찾지 못했습니다.')
+        self.assertEqual(r.status, WorkflowStatus.NOT_FOUND)
+        self.assertEqual(r.details['reason'], '질문에 맞는 자료를 찾지 못했습니다.')
+        self.assertIsNone(r.value)
+
+    def test_upstream_error_factory(self):
+        # Phase 6-3: LLM / 네트워크 일시 장애.
+        r = WorkflowResult.upstream_error('표 해석 중 일시 오류')
+        self.assertEqual(r.status, WorkflowStatus.UPSTREAM_ERROR)
+        self.assertEqual(r.details['reason'], '표 해석 중 일시 오류')
+
+    def test_new_status_values_are_plain_strings(self):
+        self.assertEqual(WorkflowStatus.NOT_FOUND.value, 'not_found')
+        self.assertEqual(WorkflowStatus.UPSTREAM_ERROR.value, 'upstream_error')
+
     def test_status_enum_value_is_plain_string(self):
         # JSON / DB 저장을 위해 enum 이 문자열로 직접 쓰여야 한다.
         self.assertEqual(WorkflowStatus.OK.value, 'ok')
