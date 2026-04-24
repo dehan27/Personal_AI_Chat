@@ -39,6 +39,7 @@ def qa_root(request):
 
 def qa_logs(request):
     tab = request.GET.get('tab', 'all')
+    q = (request.GET.get('q') or '').strip()
 
     base_qs = ChatLog.objects.annotate(
         up_count=Count('feedbacks', filter=Q(feedbacks__rating=Feedback.Rating.UP)),
@@ -54,12 +55,15 @@ def qa_logs(request):
         tab = 'all'
         qs = base_qs
 
+    if q:
+        qs = qs.filter(question__icontains=q)
+
     paginator = Paginator(qs.order_by('-created_at'), PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get('page'))
     items = list(page_obj.object_list)
     _enrich_with_sources(items)
 
-    # 탭별 카운트
+    # 탭별 카운트 — 검색어는 적용하지 않는다(탭 배지는 전체 규모를 보여줘야 함)
     all_base = ChatLog.objects.annotate(promoted_count=Count('promotions'))
     tab_counts = {
         'pending': all_base.filter(promoted_count=0).count(),
@@ -73,6 +77,7 @@ def qa_logs(request):
         'page_obj': page_obj,
         'total_count': paginator.count,
         'tab': tab,
+        'q': q,
         'tab_counts': tab_counts,
         'counts': {
             'logs': ChatLog.objects.count(),
@@ -89,6 +94,7 @@ def qa_logs(request):
 
 def qa_feedback(request):
     tab = request.GET.get('tab', 'all')
+    q = (request.GET.get('q') or '').strip()
 
     base_qs = (
         ChatLog.objects
@@ -108,12 +114,15 @@ def qa_feedback(request):
         tab = 'all'
         qs = base_qs.annotate(total=Count('feedbacks')).filter(total__gt=0).order_by('-total', '-created_at')
 
+    if q:
+        qs = qs.filter(question__icontains=q)
+
     paginator = Paginator(qs, PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get('page'))
     items = list(page_obj.object_list)
     _enrich_with_sources(items)
 
-    # 카운트 — 동일 로직으로 집계
+    # 카운트 — 동일 로직으로 집계 (검색어 적용 없음)
     feedback_base = ChatLog.objects.annotate(
         up=Count('feedbacks', filter=Q(feedbacks__rating=Feedback.Rating.UP)),
         down=Count('feedbacks', filter=Q(feedbacks__rating=Feedback.Rating.DOWN)),
@@ -135,6 +144,7 @@ def qa_feedback(request):
         'page_obj': page_obj,
         'total_count': paginator.count,
         'tab': tab,
+        'q': q,
         'counts': counts,
     }
     return render(request, 'bo/qa_feedback.html', context)
@@ -145,7 +155,12 @@ def qa_feedback(request):
 # ---------------------------------------------------------------------------
 
 def qa_canonical(request):
+    q = (request.GET.get('q') or '').strip()
+
     base_qs = CanonicalQA.objects.select_related('source_chatlog').order_by('-created_at')
+    if q:
+        base_qs = base_qs.filter(question__icontains=q)
+
     paginator = Paginator(base_qs, PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get('page'))
     items = list(page_obj.object_list)
@@ -166,6 +181,7 @@ def qa_canonical(request):
         'items': items,
         'page_obj': page_obj,
         'total_count': paginator.count,
+        'q': q,
         'counts': {
             'logs': ChatLog.objects.count(),
             'feedback': Feedback.objects.values('chat_log_id').distinct().count(),
@@ -235,6 +251,87 @@ def qa_canonical_delete(request, pk):
 
 
 # ---------------------------------------------------------------------------
+# 일괄 액션 (Bulk)
+# ---------------------------------------------------------------------------
+
+@require_POST
+def qa_bulk_promote(request):
+    """선택된 ChatLog 들을 한 번에 공식 Q&A 로 승격.
+
+    이미 승격된 로그는 자동 제외(단건 `qa_promote` 와 동일한 규칙을 유지).
+    """
+    ids = _parsed_ids(request)
+    if not ids:
+        messages.error(request, '선택된 항목이 없습니다.')
+        return redirect(_back_to(request))
+
+    targets = (
+        ChatLog.objects
+        .annotate(promoted_count=Count('promotions'))
+        .filter(pk__in=ids, promoted_count=0)
+    )
+    promoted = 0
+    for cl in targets:
+        promote_to_canonical(cl)
+        promoted += 1
+
+    skipped = len(ids) - promoted
+    if promoted and skipped:
+        messages.success(request, f'{promoted}건 승격, {skipped}건은 이미 승격돼 건너뜀.')
+    elif promoted:
+        messages.success(request, f'{promoted}건을 공식 Q&A 로 승격했습니다.')
+    else:
+        messages.error(request, '이미 모두 승격된 로그입니다.')
+    return redirect(_back_to(request))
+
+
+@require_POST
+def qa_bulk_delete_logs(request):
+    """선택된 ChatLog 일괄 삭제.
+
+    승격된 로그는 단건 규칙대로 이 경로에서 삭제 불가(공식 Q&A 창에서만).
+    """
+    ids = _parsed_ids(request)
+    if not ids:
+        messages.error(request, '선택된 항목이 없습니다.')
+        return redirect(_back_to(request))
+
+    # 삭제 제외 대상(이미 승격된 로그) pk 집합을 먼저 추린다.
+    promoted_ids = set(
+        ChatLog.objects
+        .annotate(promoted_count=Count('promotions'))
+        .filter(pk__in=ids, promoted_count__gt=0)
+        .values_list('pk', flat=True)
+    )
+    deletable_ids = [i for i in ids if i not in promoted_ids]
+    ChatLog.objects.filter(pk__in=deletable_ids).delete()
+
+    deleted = len(deletable_ids)
+    skipped = len(promoted_ids)
+    if deleted and skipped:
+        messages.success(request, f'{deleted}건 삭제, {skipped}건은 승격됨 상태라 건너뜀.')
+    elif deleted:
+        messages.success(request, f'{deleted}건을 삭제했습니다.')
+    else:
+        messages.error(request, '선택한 로그 모두 승격됨 상태라 삭제할 수 없습니다.')
+    return redirect(_back_to(request))
+
+
+@require_POST
+def qa_bulk_delete_canonical(request):
+    """선택된 공식 Q&A 일괄 삭제."""
+    ids = _parsed_ids(request)
+    if not ids:
+        messages.error(request, '선택된 항목이 없습니다.')
+        return redirect(_back_to(request))
+
+    deleted = CanonicalQA.objects.filter(pk__in=ids).count()
+    CanonicalQA.objects.filter(pk__in=ids).delete()
+    messages.success(request, f'{deleted}건을 삭제했습니다.')
+    return redirect(_back_to(request))
+
+
+# ---------------------------------------------------------------------------
 # 헬퍼
 # ---------------------------------------------------------------------------
 
@@ -258,3 +355,21 @@ def _back_to(request) -> str:
         if p.path.startswith('/bo/qa/'):
             return ref
     return '/bo/qa/logs/'
+
+
+def _parsed_ids(request) -> list[int]:
+    """POST body 의 `ids` 목록을 정수 리스트로. 숫자 아닌 값은 버린다."""
+    result: list[int] = []
+    for raw in request.POST.getlist('ids'):
+        try:
+            result.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    # 중복 제거 + 순서 보존
+    seen: set[int] = set()
+    unique: list[int] = []
+    for i in result:
+        if i not in seen:
+            seen.add(i)
+            unique.append(i)
+    return unique

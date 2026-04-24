@@ -1,0 +1,105 @@
+{% comment %}Q&A 페이지 공용 — 수정 모드 토글 / 카드 클릭 선택 / 전체 선택 / bulk 액션 JS.
+
+세 페이지(qa_logs, qa_feedback, qa_canonical) 모두 같은 마크업 규약을 따르기 때문에
+동일 스크립트 하나를 include 한다.
+
+마크업 규약:
+- 페이지 헤더 버튼: .qa-edit-toggle[data-qa-edit-toggle]
+- 컨텐츠 래퍼   : .qa-page (여기에 .bulk-mode 클래스를 on/off)
+- 툴바         : .qa-bulk-toolbar (CSS 가 .qa-page.bulk-mode 일 때만 display:flex)
+- 카드         : .qa-card[data-qa-id="N"], 내부에 <input type="checkbox" class="qa-bulk-check" hidden>
+- 툴바 버튼    : data-qa-select-all / data-qa-bulk-promote / data-qa-bulk-delete
+- 카운터       : data-qa-selected-count
+{% endcomment %}
+<script>
+  (function () {
+    const page = document.querySelector('.qa-page');
+    const toggleBtn = document.querySelector('[data-qa-edit-toggle]');
+    const toolbar = document.querySelector('[data-qa-bulk-toolbar]');
+    if (!page || !toggleBtn || !toolbar) return;
+
+    const selectAllBtn = toolbar.querySelector('[data-qa-select-all]');
+    const actionBtns = toolbar.querySelectorAll('button[type="submit"]');
+    const countEl = toolbar.querySelector('[data-qa-selected-count]');
+
+    function checkboxes() {
+      return Array.from(page.querySelectorAll('.qa-bulk-check'));
+    }
+
+    function refreshState() {
+      const boxes = checkboxes();
+      const selected = boxes.filter((b) => b.checked);
+      countEl.textContent = String(selected.length);
+      actionBtns.forEach((b) => {
+        b.disabled = selected.length === 0;
+      });
+      if (selectAllBtn) {
+        selectAllBtn.textContent = (boxes.length > 0 && selected.length === boxes.length)
+          ? '전체 해제'
+          : '전체 선택';
+      }
+    }
+
+    function setSelected(card, on) {
+      const box = card.querySelector('.qa-bulk-check');
+      if (!box) return;
+      box.checked = on;
+      card.classList.toggle('selected', on);
+    }
+
+    function clearAll() {
+      page.querySelectorAll('.qa-card').forEach((c) => setSelected(c, false));
+      refreshState();
+    }
+
+    // 수정 / 완료 토글
+    toggleBtn.addEventListener('click', () => {
+      const on = !page.classList.contains('bulk-mode');
+      page.classList.toggle('bulk-mode', on);
+      toggleBtn.classList.toggle('active', on);
+      toggleBtn.textContent = on ? '완료' : '수정';
+      if (!on) clearAll();     // 완료로 돌아갈 때는 선택 비움
+      else refreshState();     // 진입 시 버튼 상태 동기화
+    });
+
+    // 카드 클릭 → 선택 토글 (.bulk-mode 에서만, 내부 인터랙티브 요소는 제외)
+    page.addEventListener('click', (e) => {
+      if (!page.classList.contains('bulk-mode')) return;
+      const card = e.target.closest('.qa-card');
+      if (!card) return;
+      // 카드 내부의 링크/버튼/폼은 기존 동작 유지 — 선택 토글 막음
+      if (e.target.closest('a, button, form, input, textarea, select, label')) return;
+      const box = card.querySelector('.qa-bulk-check');
+      if (!box) return;
+      setSelected(card, !box.checked);
+      refreshState();
+    });
+
+    // 전체 선택 / 전체 해제
+    if (selectAllBtn) {
+      selectAllBtn.addEventListener('click', () => {
+        const boxes = checkboxes();
+        const allSelected = boxes.length > 0 && boxes.every((b) => b.checked);
+        boxes.forEach((b) => {
+          const card = b.closest('.qa-card');
+          setSelected(card, !allSelected);
+        });
+        refreshState();
+      });
+    }
+
+    // 삭제 계열 버튼에 확인창 (data-qa-confirm 값을 메시지로 사용)
+    actionBtns.forEach((btn) => {
+      const msg = btn.getAttribute('data-qa-confirm');
+      if (!msg) return;
+      btn.addEventListener('click', (e) => {
+        if (!confirm(msg)) {
+          e.preventDefault();
+        }
+      });
+    });
+
+    // 초기 상태
+    refreshState();
+  })();
+</script>

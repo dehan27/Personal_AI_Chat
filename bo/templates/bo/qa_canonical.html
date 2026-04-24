@@ -42,6 +42,7 @@
     <h1 class="page-title">Q&amp;A 관리</h1>
     <p class="page-description">챗봇이 검색·재사용하는 공식 Q&amp;A 목록입니다. 편집·삭제할 수 있습니다.</p>
   </div>
+  <button type="button" class="btn qa-edit-toggle" data-qa-edit-toggle>수정</button>
 </header>
 
 {% include 'bo/_qa_subnav.html' %}
@@ -52,85 +53,113 @@
   {% endfor %}
 {% endif %}
 
-{% if page_obj.paginator.count %}
-  {% for qa in items %}
-    <article class="qa-card" data-qa-id="{{ qa.pk }}">
-      <h2 class="qa-question">Q. {{ qa.question }}</h2>
-      <div class="qa-meta">
-        <span>생성: {{ qa.created_at|date:"Y-m-d H:i" }}</span>
-        {% if qa.source_chatlog %}
-          <span>ChatLog #{{ qa.source_chatlog_id }} 에서 승격</span>
-        {% endif %}
-        {% if qa.source_names %}
-          <span>출처: {{ qa.source_names|join:", " }}</span>
-        {% endif %}
-      </div>
+<div class="qa-page">
+  <form class="qa-search" method="get" role="search">
+    <input type="search" name="q" value="{{ q }}" placeholder="질문 검색…" aria-label="질문 검색">
+    <button type="submit" class="btn">검색</button>
+    {% if q %}<a class="btn" href="?">초기화</a>{% endif %}
+  </form>
 
-      <div class="qa-answer-display">
-        <div class="qa-answer">A. {{ qa.answer }}</div>
-        <div class="qa-actions">
-          <button type="button" class="btn btn-sm" data-edit-btn>편집</button>
-          <form method="post" action="{% url 'bo:qa_canonical_delete' qa.pk %}" style="display: inline;"
-                onsubmit="return confirm('이 공식 Q&amp;A를 삭제하시겠습니까?');">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-danger">삭제</button>
-          </form>
-        </div>
-      </div>
+  <form id="qa-bulk-form" method="post">{% csrf_token %}</form>
 
-      <form method="post" action="{% url 'bo:qa_canonical_update' qa.pk %}" class="qa-answer-editor-form canonical-editor" style="display: none;">
-        {% csrf_token %}
-        <div>
-          <label>질문</label>
-          <input type="text" name="question" value="{{ qa.question }}" required>
-        </div>
-        <div>
-          <label>답변</label>
-          <textarea name="answer" required>{{ qa.answer }}</textarea>
-        </div>
-        <div class="qa-edit-actions">
-          <button type="button" class="btn btn-sm" data-cancel-edit-btn>취소</button>
-          <button type="submit" class="btn btn-sm btn-primary">저장</button>
-        </div>
-      </form>
-    </article>
-  {% endfor %}
-
-  {% if page_obj.paginator.num_pages > 1 %}
-    <nav class="pagination">
-      <div class="pagination-row">
-        {% if page_obj.has_previous %}
-          <a class="pagination-btn" href="?page={{ page_obj.previous_page_number }}">‹ 이전</a>
-        {% else %}
-          <span class="pagination-btn disabled">‹ 이전</span>
-        {% endif %}
-
-        {% for n in page_obj.paginator.page_range %}
-          {% if n == page_obj.number %}
-            <span class="pagination-page active">{{ n }}</span>
-          {% else %}
-            <a class="pagination-page" href="?page={{ n }}">{{ n }}</a>
-          {% endif %}
-        {% endfor %}
-
-        {% if page_obj.has_next %}
-          <a class="pagination-btn" href="?page={{ page_obj.next_page_number }}">다음 ›</a>
-        {% else %}
-          <span class="pagination-btn disabled">다음 ›</span>
-        {% endif %}
-      </div>
-      <div class="pagination-info">총 {{ total_count }}건</div>
-    </nav>
-  {% endif %}
-{% else %}
-  <div class="empty-state">
-    <div class="empty-state-title">공식 Q&amp;A가 없습니다</div>
-    <div>대화 로그에서 좋은 답변을 [공식 승격]으로 추가하세요.</div>
+  <div class="qa-bulk-toolbar" data-qa-bulk-toolbar>
+    <button type="button" class="btn btn-sm" data-qa-select-all>전체 선택</button>
+    <button type="submit" class="btn btn-sm btn-danger" form="qa-bulk-form"
+            formaction="{% url 'bo:qa_bulk_delete_canonical' %}"
+            data-qa-bulk-delete
+            data-qa-confirm="선택한 공식 Q&A 를 모두 삭제하시겠습니까?"
+            disabled>선택 삭제</button>
+    <span class="qa-bulk-count"><span data-qa-selected-count>0</span>개 선택됨</span>
   </div>
-{% endif %}
+
+  {% if page_obj.paginator.count %}
+    {% for qa in items %}
+      <article class="qa-card" data-qa-id="{{ qa.pk }}">
+        <input type="checkbox" name="ids" value="{{ qa.pk }}" form="qa-bulk-form"
+               class="qa-bulk-check" hidden>
+        <h2 class="qa-question">Q. {{ qa.question }}</h2>
+        <div class="qa-meta">
+          <span>생성: {{ qa.created_at|date:"Y-m-d H:i" }}</span>
+          {% if qa.source_chatlog %}
+            <span>ChatLog #{{ qa.source_chatlog_id }} 에서 승격</span>
+          {% endif %}
+          {% if qa.source_names %}
+            <span>출처: {{ qa.source_names|join:", " }}</span>
+          {% endif %}
+        </div>
+
+        <div class="qa-answer-display">
+          <div class="qa-answer">A. {{ qa.answer }}</div>
+          <div class="qa-actions">
+            <button type="button" class="btn btn-sm" data-edit-btn>편집</button>
+            <form method="post" action="{% url 'bo:qa_canonical_delete' qa.pk %}" style="display: inline;"
+                  onsubmit="return confirm('이 공식 Q&amp;A를 삭제하시겠습니까?');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+            </form>
+          </div>
+        </div>
+
+        <form method="post" action="{% url 'bo:qa_canonical_update' qa.pk %}" class="qa-answer-editor-form canonical-editor" style="display: none;">
+          {% csrf_token %}
+          <div>
+            <label>질문</label>
+            <input type="text" name="question" value="{{ qa.question }}" required>
+          </div>
+          <div>
+            <label>답변</label>
+            <textarea name="answer" required>{{ qa.answer }}</textarea>
+          </div>
+          <div class="qa-edit-actions">
+            <button type="button" class="btn btn-sm" data-cancel-edit-btn>취소</button>
+            <button type="submit" class="btn btn-sm btn-primary">저장</button>
+          </div>
+        </form>
+      </article>
+    {% endfor %}
+
+    {% if page_obj.paginator.num_pages > 1 %}
+      <nav class="pagination">
+        <div class="pagination-row">
+          {% if page_obj.has_previous %}
+            <a class="pagination-btn" href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.previous_page_number }}">‹ 이전</a>
+          {% else %}
+            <span class="pagination-btn disabled">‹ 이전</span>
+          {% endif %}
+
+          {% for n in page_obj.paginator.page_range %}
+            {% if n == page_obj.number %}
+              <span class="pagination-page active">{{ n }}</span>
+            {% else %}
+              <a class="pagination-page" href="?{% if q %}q={{ q }}&{% endif %}page={{ n }}">{{ n }}</a>
+            {% endif %}
+          {% endfor %}
+
+          {% if page_obj.has_next %}
+            <a class="pagination-btn" href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.next_page_number }}">다음 ›</a>
+          {% else %}
+            <span class="pagination-btn disabled">다음 ›</span>
+          {% endif %}
+        </div>
+        <div class="pagination-info">총 {{ total_count }}건</div>
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">
+        {% if q %}"{{ q }}" 에 대한 결과가 없습니다{% else %}공식 Q&amp;A가 없습니다{% endif %}
+      </div>
+      <div>
+        {% if q %}검색어를 바꾸거나 초기화 해보세요.
+        {% else %}대화 로그에서 좋은 답변을 [공식 승격]으로 추가하세요.{% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}
+{% include 'bo/_qa_bulk_script.html' %}
 <script>
   (function () {
     document.querySelectorAll('.qa-card').forEach((card) => {

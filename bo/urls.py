@@ -29,6 +29,11 @@ urlpatterns = [
     path('qa/canonical/<int:pk>/update/', views.qa_canonical_update, name='qa_canonical_update'),
     path('qa/canonical/<int:pk>/delete/', views.qa_canonical_delete, name='qa_canonical_delete'),
 
+    # 일괄 액션 (bulk) — ids[] POST 로 받음
+    path('qa/logs/bulk-promote/', views.qa_bulk_promote, name='qa_bulk_promote'),
+    path('qa/logs/bulk-delete/', views.qa_bulk_delete_logs, name='qa_bulk_delete_logs'),
+    path('qa/canonical/bulk-delete/', views.qa_bulk_delete_canonical, name='qa_bulk_delete_canonical'),
+
     # Prompt 관리 (registry 기반 allow-list 편집기)
     path('prompts/', views.prompts_index, name='prompts'),
     path('prompts/<slug:key>/', views.prompts_edit, name='prompts_edit'),
