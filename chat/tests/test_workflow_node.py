@@ -131,3 +131,90 @@ class WorkflowNodeTests(SimpleTestCase):
         args, _ = mocked_record.call_args
         self.assertEqual(args[0], 'gpt-4o-mini')
         self.assertIn('31일', out['result'].reply)
+
+
+class WorkflowNodeRewriterIntegrationTests(SimpleTestCase):
+    """Phase 6-3: schema 에 text 필드가 있을 때만 rewrite_query_with_history 가 돈다."""
+
+    class _Usage:
+        prompt_tokens = 10
+        completion_tokens = 2
+        total_tokens = 12
+
+    def test_date_workflow_does_not_invoke_rewriter(self):
+        # date_calculation 의 schema 에는 text 필드가 없다 → rewriter 호출 0.
+        state = {
+            'question': '2025-01-01 부터 2025-02-01 까지 며칠?',
+            'history': [{'role': 'user', 'content': '앞서 나눈 대화'}],
+            'workflow_key': 'date_calculation',
+        }
+        with patch(
+            'chat.graph.nodes.workflow.rewrite_query_with_history',
+        ) as rewriter:
+            out = workflow_node(state)
+        rewriter.assert_not_called()
+        self.assertIn('31일', out['result'].reply)
+
+    def test_text_schema_with_empty_history_skips_rewriter(self):
+        # table_lookup 는 text 필드를 가지지만 history 가 비면 rewriter 는 돌지 않는다.
+        # (reply 문구의 정확성은 Step 7 에서 별도 확인.)
+        state = {
+            'question': '표에서 본인 상 경조금',
+            'history': [],
+            'workflow_key': 'table_lookup',
+        }
+        with patch(
+            'chat.graph.nodes.workflow.rewrite_query_with_history',
+        ) as rewriter, patch(
+            'chat.workflows.domains.general.table_lookup.retrieve_documents',
+            return_value=[],
+        ):
+            out = workflow_node(state)
+        rewriter.assert_not_called()
+        # dispatch 는 정상 실행됐어야 한다 (NOT_FOUND 결과 reply 가 담겼는지 확인).
+        self.assertIsNotNone(out['result'].reply)
+
+    def test_text_schema_with_history_runs_rewriter_and_records_usage(self):
+        state = {
+            'question': '그 표에서 제일 큰 금액',
+            'history': [
+                {'role': 'user', 'content': '경조사 규정 알려줘'},
+                {'role': 'assistant', 'content': '경조사 규정 표는 ...'},
+            ],
+            'workflow_key': 'table_lookup',
+        }
+        with patch(
+            'chat.graph.nodes.workflow.rewrite_query_with_history',
+            return_value=('경조사 표에서 가장 큰 경조금 금액', self._Usage(), 'gpt-4o-mini'),
+        ) as rewriter, patch(
+            'chat.graph.nodes.workflow.record_token_usage',
+        ) as record, patch(
+            'chat.workflows.domains.general.table_lookup.retrieve_documents',
+            return_value=[],
+        ) as retrieve:
+            workflow_node(state)
+
+        rewriter.assert_called_once()
+        # rewriter 가 돌았으니 TokenUsage 도 한 번 기록.
+        record.assert_called_once()
+        # retrieve_documents 는 rewritten 질문으로 호출됐어야 한다.
+        retrieve.assert_called_once()
+        called_query = retrieve.call_args.args[0]
+        self.assertEqual(called_query, '경조사 표에서 가장 큰 경조금 금액')
+
+    def test_explicit_workflow_input_bypasses_rewriter(self):
+        state = {
+            'question': 'anything',
+            'history': [{'role': 'user', 'content': 'x'}],
+            'workflow_key': 'date_calculation',
+            'workflow_input': {'start': '2025-01-01', 'end': '2025-02-01'},
+        }
+        with patch(
+            'chat.graph.nodes.workflow.rewrite_query_with_history',
+        ) as rewriter, patch(
+            'chat.graph.nodes.workflow.extract_workflow_input',
+        ) as extractor:
+            out = workflow_node(state)
+        rewriter.assert_not_called()
+        extractor.assert_not_called()
+        self.assertIn('31일', out['result'].reply)
