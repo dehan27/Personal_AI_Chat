@@ -42,8 +42,12 @@ RECENT_DAYS = 7
 # 상위 호출에서 기다릴 수 있는 최대 시간 (초).
 REQUEST_TIMEOUT = 10
 
-# 페이지네이션 안전판 — 정상 응답은 한두 페이지로 끝난다.
-MAX_PAGES = 20
+# 페이지네이션 안전판. OpenAI 가 bucket_width=1d 에서 페이지당 최대 31 일(=31 버킷)
+# 만 허용하므로 1 년치를 뽑아도 ~12 페이지면 끝난다. 여유롭게 24 페이지.
+MAX_PAGES = 24
+
+# bucket_width=1d 에서 허용되는 페이지당 최대 개수. 1m=1440, 1h=168, 1d=31 제한.
+_BUCKETS_PER_PAGE = 31
 
 _BASE_URL = 'https://api.openai.com/v1/organization'
 
@@ -286,7 +290,7 @@ def _iter_buckets(
             ('start_time', str(int(start.timestamp()))),
             ('end_time', str(int(end.timestamp()))),
             ('bucket_width', bucket_width),
-            ('limit', '180'),
+            ('limit', str(_BUCKETS_PER_PAGE)),
         ]
         if page:
             params.append(('page', page))
