@@ -1,12 +1,20 @@
 """Single-shot 조합자.
 
-retrieve → qa_cache → prompting → llm → postprocess 순서로 helper 들을 엮어
-하나의 질문에 대한 `QueryResult` 를 만든다. 외부 진입점은 `run_single_shot`
-하나. view / graph 노드 / 향후 workflow 에서 모두 이 함수를 호출한다.
+rewrite → retrieve → qa_cache → prompting → llm → postprocess 순서로
+helper 들을 엮어 하나의 질문에 대한 `QueryResult` 를 만든다. 외부 진입점은
+`run_single_shot` 하나. view / graph 노드 / 향후 workflow 에서 모두 이 함수를
+호출한다.
+
+Phase 4-3: retrieval 앞단에 쿼리 재작성(rewrite) 단계가 붙는다. "비싼거"
+같이 맥락에 의존하는 후속 질문을 직전 대화 내용과 함께 cheap LLM 에 보내
+self-contained 검색어로 바꾼 뒤, 그 결과를 retrieve_documents /
+find_canonical_qa 에 넘긴다. 원본 `question` 은 그대로 LLM 프롬프트와
+ChatLog 에 흐른다 — 사용자가 입력한 문구를 보존한다.
 """
 
 from typing import Dict, List, Optional
 
+from chat.services.query_rewriter import rewrite_query_with_history
 from chat.services.single_shot.llm import run_chat_completion
 from chat.services.single_shot.postprocess import (
     build_sources,
@@ -31,11 +39,17 @@ def run_single_shot(
     """
     history = history or []
 
+    # 0) 검색어 재작성 — 맥락 의존 후속 질문을 self-contained 쿼리로 변환.
+    #    history 가 비어있거나 LLM 이 실패하면 원본 질문이 그대로 돌아온다.
+    search_query, _rewriter_usage, _rewriter_model = rewrite_query_with_history(
+        question, history,
+    )
+
     # 1~2) 자료 후보 검색 + 재정렬
-    chunk_hits = retrieve_documents(question)
+    chunk_hits = retrieve_documents(search_query)
 
     # 3) 공식 Q&A 검색
-    qa_hits = find_canonical_qa(question)
+    qa_hits = find_canonical_qa(search_query)
 
     # 4) 캐시 히트면 즉시 반환 (OpenAI 호출 생략)
     cached = resolve_cache_hit(qa_hits)
