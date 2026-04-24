@@ -11,6 +11,9 @@ from .qa import (
     qa_log_delete,
     qa_canonical_update,
     qa_canonical_delete,
+    qa_bulk_promote,
+    qa_bulk_delete_logs,
+    qa_bulk_delete_canonical,
 )
 from .router_rules import (
     router_rules_index,

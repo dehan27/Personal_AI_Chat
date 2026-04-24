@@ -142,4 +142,67 @@
     justify-content: flex-end;
   }
   .qa-edit-actions { margin-top: var(--space-2); }
+
+  /* ── 검색 폼 (탭 바로 아래) ───────────────────────────────────── */
+  /* 내부 구성요소는 가이드라인 .input-icon-wrap / .input.input-with-icon-left
+     / .btn.btn-primary / .btn.btn-secondary.refresh-btn 을 그대로 사용한다.
+     폭은 아래 카드 리스트와 같이 가로 전체를 쓴다. */
+  .qa-search {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  .qa-search .input-icon-wrap { flex: 1; min-width: 0; }
+  .qa-search .refresh-btn {
+    flex-shrink: 0;
+    width: 38px;
+    padding: 0;
+  }
+
+  /* ── 일괄 선택 모드 ─────────────────────────────────────────── */
+  /* 툴바와 선택 스타일은 기본적으로 숨겨져 있다가 .bulk-mode 가 켜지면 드러난다. */
+  .qa-bulk-toolbar {
+    display: none;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+  .qa-bulk-toolbar .qa-bulk-count {
+    margin-left: auto;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+  .qa-page.bulk-mode .qa-bulk-toolbar { display: flex; }
+
+  /* 편집 모드에서 카드 자체가 클릭 타깃처럼 보이게 */
+  .qa-page.bulk-mode .qa-card {
+    cursor: pointer;
+    transition: border-color var(--transition-base), box-shadow var(--transition-base), background var(--transition-base);
+  }
+  .qa-page.bulk-mode .qa-card:hover {
+    border-color: var(--color-accent-border);
+  }
+  .qa-page.bulk-mode .qa-card.selected {
+    border: 2px solid var(--color-accent);
+    background: var(--color-accent-light);
+    /* 2px 테두리 증가분을 패딩으로 보정해 내부 레이아웃 흔들림 방지 */
+    padding: calc(var(--space-5) - 1px);
+  }
+
+  /* 편집 모드에서 단건 액션·편집 폼은 숨긴다. bulk 액션 사용을 유도. */
+  .qa-page.bulk-mode .qa-actions,
+  .qa-page.bulk-mode .qa-answer-editor-form {
+    display: none !important;
+  }
+
+  /* 편집 모드 토글 버튼이 활성 상태일 때 식별되도록 */
+  .qa-edit-toggle.active {
+    background: var(--color-accent-light);
+    border-color: var(--color-accent);
+    color: var(--color-accent-text);
+  }
 </style>
