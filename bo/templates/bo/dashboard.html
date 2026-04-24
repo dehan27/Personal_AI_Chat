@@ -2,12 +2,64 @@
 
 {% block title %}대시보드{% endblock %}
 
+{% block extra_head %}
+<style>
+  /* 헤더 우측 버튼이 좁은 폭에서 줄바꿈되지 않게 */
+  .page-header .btn { white-space: nowrap; }
+
+  /* API 사용량 모달 전용 보조 클래스 — 가이드 모달 컴포넌트 확장 */
+  .usage-section + .usage-section { margin-top: var(--space-6); }
+  .usage-section-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom: var(--space-3);
+  }
+  .usage-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .usage-stat {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+  }
+  .usage-stat-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-bottom: 2px;
+  }
+  .usage-stat-value {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .usage-loading, .usage-error {
+    text-align: center;
+    padding: var(--space-6) var(--space-4);
+    color: var(--color-text-muted);
+  }
+  .usage-error-title {
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-medium);
+    margin-bottom: var(--space-2);
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <header class="page-header">
   <div>
     <h1 class="page-title">대시보드</h1>
     <p class="page-description">최근 {{ days }}일 동안의 AI 토큰 사용량</p>
   </div>
+  <button type="button" class="btn btn-primary" id="openai-usage-open">API 사용량</button>
 </header>
 
 <section class="stats-grid">
@@ -65,4 +117,184 @@
     </div>
   {% endif %}
 </section>
+
+{# ── API 사용량 모달 ─────────────────────────────────────────── #}
+<div class="modal-overlay" id="openai-usage-modal" role="dialog" aria-modal="true" aria-labelledby="openai-usage-title" aria-hidden="true">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2 class="modal-title" id="openai-usage-title">API 사용량</h2>
+      <button type="button" class="modal-close" id="openai-usage-close" aria-label="닫기">×</button>
+    </div>
+    <div class="modal-body" id="openai-usage-body">
+      <div class="usage-loading">불러오는 중…</div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn" id="openai-usage-close-footer">닫기</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const overlay = document.getElementById('openai-usage-modal');
+    const body = document.getElementById('openai-usage-body');
+    const openBtn = document.getElementById('openai-usage-open');
+    const closeBtn = document.getElementById('openai-usage-close');
+    const closeFooterBtn = document.getElementById('openai-usage-close-footer');
+    if (!overlay || !openBtn) return;
+
+    const ENDPOINT = '{% url "bo:openai_usage" %}';
+
+    function openModal() {
+      overlay.classList.add('open');
+      overlay.setAttribute('aria-hidden', 'false');
+      loadUsage();
+    }
+    function closeModal() {
+      overlay.classList.remove('open');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    openBtn.addEventListener('click', openModal);
+    closeBtn.addEventListener('click', closeModal);
+    closeFooterBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+    });
+
+    async function loadUsage() {
+      body.innerHTML = '<div class="usage-loading">불러오는 중…</div>';
+      try {
+        const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          renderError(data.error || 'unexpected', data.message || '알 수 없는 오류가 발생했습니다.');
+          return;
+        }
+        const data = await res.json();
+        render(data);
+      } catch (err) {
+        renderError('network', '네트워크 오류로 데이터를 불러오지 못했습니다.');
+      }
+    }
+
+    function fmtInt(n) {
+      return (Number(n) || 0).toLocaleString();
+    }
+    function fmtUsd(n) {
+      const v = Number(n) || 0;
+      return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    function render(data) {
+      const total = data.total || {};
+      const recent = data.last_7d || {};
+      const daily = recent.daily || [];
+      const byModel = recent.by_model || [];
+
+      const statsBlock = (s) => `
+        <div class="usage-stats">
+          <div class="usage-stat"><div class="usage-stat-label">입력 토큰</div><div class="usage-stat-value">${fmtInt(s.input_tokens)}</div></div>
+          <div class="usage-stat"><div class="usage-stat-label">출력 토큰</div><div class="usage-stat-value">${fmtInt(s.output_tokens)}</div></div>
+          <div class="usage-stat"><div class="usage-stat-label">총 토큰</div><div class="usage-stat-value">${fmtInt(s.total_tokens)}</div></div>
+          <div class="usage-stat"><div class="usage-stat-label">비용</div><div class="usage-stat-value">${fmtUsd(s.cost_usd)}</div></div>
+        </div>
+      `;
+
+      const dailyRows = daily.length
+        ? daily.map((d) => `
+            <tr>
+              <td>${esc(d.date)}</td>
+              <td>${fmtInt(d.input)}</td>
+              <td>${fmtInt(d.output)}</td>
+              <td>${fmtInt(d.total)}</td>
+              <td>${fmtUsd(d.cost_usd)}</td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="5" class="usage-loading">기록된 사용량이 없습니다.</td></tr>';
+
+      const modelRows = byModel.length
+        ? byModel.map((m) => `
+            <tr>
+              <td>${esc(m.model)}</td>
+              <td>${fmtInt(m.tokens)}</td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="2" class="usage-loading">모델 사용 기록이 없습니다.</td></tr>';
+
+      body.innerHTML = `
+        <section class="usage-section">
+          <div class="usage-section-title">전체 누적</div>
+          ${statsBlock(total)}
+        </section>
+
+        <section class="usage-section">
+          <div class="usage-section-title">최근 7일</div>
+          ${statsBlock(recent)}
+
+          <div class="table-wrap" style="margin-top: var(--space-3);">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>입력</th>
+                  <th>출력</th>
+                  <th>합계</th>
+                  <th>비용</th>
+                </tr>
+              </thead>
+              <tbody>${dailyRows}</tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="usage-section">
+          <div class="usage-section-title">최근 7일 · 모델별</div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>모델</th>
+                  <th>토큰</th>
+                </tr>
+              </thead>
+              <tbody>${modelRows}</tbody>
+            </table>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderError(code, message) {
+      const title = {
+        admin_key_missing: 'Admin 키가 설정되지 않았습니다',
+        unauthorized: 'Admin 키 인증이 거부되었습니다',
+        upstream_failed: 'OpenAI 응답을 받지 못했습니다',
+        bad_payload: '응답 해석 실패',
+        network: '네트워크 오류',
+      }[code] || '알 수 없는 오류';
+
+      body.innerHTML = `
+        <div class="usage-error">
+          <div class="usage-error-title">${esc(title)}</div>
+          <div>${esc(message)}</div>
+          <div style="margin-top: var(--space-4);">
+            <button type="button" class="btn" id="openai-usage-retry">다시 시도</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('openai-usage-retry').addEventListener('click', loadUsage);
+    }
+  })();
+</script>
 {% endblock %}
