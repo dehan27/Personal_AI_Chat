@@ -124,6 +124,11 @@
                 {% if rule.route == 'workflow' %}<span class="badge badge-info">workflow</span>
                 {% elif rule.route == 'agent' %}<span class="badge badge-warning">agent</span>
                 {% else %}<span class="badge">single-shot</span>{% endif %}
+                {% if rule.workflow_key %}
+                  <div style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 4px;">
+                    {{ rule.workflow_key }}
+                  </div>
+                {% endif %}
               </td>
               <td style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">{{ rule.get_match_type_display }}</td>
               <td><span class="rule-pattern">{{ rule.pattern }}</span></td>
