@@ -66,6 +66,77 @@
   }
   .rule-actions form { display: inline; }
 
+  /* 헤더 우측 버튼이 좁은 폭에서 줄바꿈되지 않게 */
+  .page-header .btn {
+    white-space: nowrap;
+  }
+
+  .defaults-block {
+    margin-top: var(--space-6);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4) var(--space-5);
+  }
+  .defaults-block > summary {
+    cursor: pointer;
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-primary);
+    list-style: none;
+  }
+  .defaults-block > summary::-webkit-details-marker { display: none; }
+  .defaults-block > summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: var(--space-2);
+    transition: transform var(--transition-base);
+  }
+  .defaults-block[open] > summary::before {
+    transform: rotate(90deg);
+  }
+  .defaults-block > summary small {
+    margin-left: var(--space-2);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-regular);
+    font-size: var(--font-size-xs);
+  }
+  .defaults-body {
+    margin-top: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .defaults-group-label {
+    display: inline-block;
+    margin-right: var(--space-3);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+    min-width: 72px;
+  }
+  .defaults-keyword-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .kw-tag {
+    display: inline-block;
+    font-size: var(--font-size-xs);
+    padding: 2px var(--space-2);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-primary);
+    font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+  }
+  .defaults-note {
+    margin-top: var(--space-3);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-normal);
+  }
+
   .rules-empty-hint {
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
@@ -82,7 +153,7 @@
 <header class="page-header">
   <div>
     <h1 class="page-title">라우팅 관리</h1>
-    <p class="page-description">질문을 <code>single_shot / workflow / agent</code> 중 어디로 보낼지 결정하는 DB rule. 매 요청마다 priority 높은 순으로 평가되고, 매치되는 rule 이 없으면 코드 내장 키워드(<code>WORKFLOW_KEYWORDS</code> / <code>AGENT_KEYWORDS</code>)가 기본 동작을 맡습니다.</p>
+    <p class="page-description">질문을 <code>single_shot / workflow / agent</code> 중 어디로 보낼지 결정하는 DB rule.<br>매 요청마다 priority 높은 순으로 평가되고, 매치되는 rule 이 없으면 코드 내장 키워드(<code>WORKFLOW_KEYWORDS</code> / <code>AGENT_KEYWORDS</code>)가 기본 동작을 맡습니다.</p>
   </div>
   <a href="{% url 'bo:router_rules_new' %}" class="btn btn-primary">+ 새 rule</a>
 </header>
@@ -152,4 +223,32 @@
     오분류되는 질문이 있거나 새 패턴을 보강하고 싶을 때 <strong>+ 새 rule</strong> 로 override 를 추가하세요.
   </div>
 {% endif %}
+
+<details class="defaults-block">
+  <summary>
+    기본 키워드 (코드 내장 · 읽기 전용)
+    <small>DB rule 이 매치되지 않을 때 분류를 담당</small>
+  </summary>
+  <div class="defaults-body">
+    <div class="defaults-keyword-row">
+      <span class="defaults-group-label">
+        <span class="route-badge route-badge-workflow">workflow</span>
+      </span>
+      {% for kw in workflow_keywords %}
+        <span class="kw-tag">{{ kw }}</span>
+      {% endfor %}
+    </div>
+    <div class="defaults-keyword-row">
+      <span class="defaults-group-label">
+        <span class="route-badge route-badge-agent">agent</span>
+      </span>
+      {% for kw in agent_keywords %}
+        <span class="kw-tag">{{ kw }}</span>
+      {% endfor %}
+    </div>
+    <div class="defaults-note">
+      이 키워드는 코드(<code>chat/services/question_router.py</code>)에 있으며 BO 에서 수정할 수 없습니다. 오분류·누락 발견 시 위 목록에 DB rule 을 추가해 override 하거나, 영구 반영이 필요하면 코드 상수를 편집하세요.
+    </div>
+  </div>
+</details>
 {% endblock %}

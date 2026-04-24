@@ -15,6 +15,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from chat.models import RouterRule
+from chat.services.question_router import AGENT_KEYWORDS, WORKFLOW_KEYWORDS
 
 
 class RouterRuleForm(forms.ModelForm):
@@ -37,10 +38,17 @@ class RouterRuleForm(forms.ModelForm):
 
 
 def router_rules_index(request):
-    """RouterRule 목록 — priority DESC (모델 Meta.ordering 이 담당)."""
+    """RouterRule 목록 + 코드 내장 기본 키워드(읽기 전용).
+
+    기본 키워드는 question_router 의 fallback 레이어 — DB rule 이 매치되지
+    않을 때 실제 분류를 담당. 운영자가 'BO 가 비어도 기본 동작은 무엇인가' 를
+    확인할 수 있도록 접이식 섹션으로 함께 노출한다. 수정은 코드에서만 가능.
+    """
     context = {
         'section': 'router_rules',
         'rules': RouterRule.objects.all(),
+        'workflow_keywords': WORKFLOW_KEYWORDS,
+        'agent_keywords': AGENT_KEYWORDS,
     }
     return render(request, 'bo/router_rules.html', context)
 
