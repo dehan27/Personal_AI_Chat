@@ -34,7 +34,7 @@
   </a>
 </nav>
 
-{% if items %}
+{% if page_obj.paginator.count %}
   {% for cl in items %}
     <article class="qa-card">
       <h2 class="qa-question">Q. {{ cl.question }}</h2>
@@ -67,6 +67,33 @@
       </div>
     </article>
   {% endfor %}
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <nav class="pagination">
+      <div class="pagination-row">
+        {% if page_obj.has_previous %}
+          <a class="pagination-btn" href="?tab={{ tab }}&page={{ page_obj.previous_page_number }}">‹ 이전</a>
+        {% else %}
+          <span class="pagination-btn disabled">‹ 이전</span>
+        {% endif %}
+
+        {% for n in page_obj.paginator.page_range %}
+          {% if n == page_obj.number %}
+            <span class="pagination-page active">{{ n }}</span>
+          {% else %}
+            <a class="pagination-page" href="?tab={{ tab }}&page={{ n }}">{{ n }}</a>
+          {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+          <a class="pagination-btn" href="?tab={{ tab }}&page={{ page_obj.next_page_number }}">다음 ›</a>
+        {% else %}
+          <span class="pagination-btn disabled">다음 ›</span>
+        {% endif %}
+      </div>
+      <div class="pagination-info">총 {{ total_count }}건</div>
+    </nav>
+  {% endif %}
 {% else %}
   <div class="empty-state">
     <div class="empty-state-title">

@@ -9,6 +9,7 @@
 from urllib.parse import urlparse
 
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -18,7 +19,10 @@ from chat.services.qa_retriever import promote_to_canonical
 from files.models import Document
 
 
-PAGE_SIZE = 50
+# 페이지당 항목 수. 대화 로그·피드백·공식 Q&A 세 섹션 공통.
+# files 관리(20) 보다 작은 이유: Q&A 카드 한 장의 높이(질문+답변+메타+액션)가
+# 파일 행보다 훨씬 커서 한 화면에 너무 많이 깔리면 스크롤 피로가 큼.
+PAGE_SIZE = 10
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +54,9 @@ def qa_logs(request):
         tab = 'all'
         qs = base_qs
 
-    items = list(qs.order_by('-created_at')[:PAGE_SIZE])
+    paginator = Paginator(qs.order_by('-created_at'), PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    items = list(page_obj.object_list)
     _enrich_with_sources(items)
 
     # 탭별 카운트
@@ -64,6 +70,8 @@ def qa_logs(request):
     context = {
         'section': 'logs',
         'items': items,
+        'page_obj': page_obj,
+        'total_count': paginator.count,
         'tab': tab,
         'tab_counts': tab_counts,
         'counts': {
@@ -100,7 +108,9 @@ def qa_feedback(request):
         tab = 'all'
         qs = base_qs.annotate(total=Count('feedbacks')).filter(total__gt=0).order_by('-total', '-created_at')
 
-    items = list(qs[:PAGE_SIZE])
+    paginator = Paginator(qs, PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    items = list(page_obj.object_list)
     _enrich_with_sources(items)
 
     # 카운트 — 동일 로직으로 집계
@@ -119,7 +129,14 @@ def qa_feedback(request):
         'canonical': CanonicalQA.objects.count(),
     }
 
-    context = {'section': 'feedback', 'items': items, 'tab': tab, 'counts': counts}
+    context = {
+        'section': 'feedback',
+        'items': items,
+        'page_obj': page_obj,
+        'total_count': paginator.count,
+        'tab': tab,
+        'counts': counts,
+    }
     return render(request, 'bo/qa_feedback.html', context)
 
 
@@ -128,7 +145,10 @@ def qa_feedback(request):
 # ---------------------------------------------------------------------------
 
 def qa_canonical(request):
-    items = list(CanonicalQA.objects.select_related('source_chatlog').order_by('-created_at')[:PAGE_SIZE])
+    base_qs = CanonicalQA.objects.select_related('source_chatlog').order_by('-created_at')
+    paginator = Paginator(base_qs, PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    items = list(page_obj.object_list)
 
     referenced_ids = {did for qa in items for did in (qa.sources or [])}
     doc_names = {
@@ -144,6 +164,8 @@ def qa_canonical(request):
     context = {
         'section': 'canonical',
         'items': items,
+        'page_obj': page_obj,
+        'total_count': paginator.count,
         'counts': {
             'logs': ChatLog.objects.count(),
             'feedback': Feedback.objects.values('chat_log_id').distinct().count(),
