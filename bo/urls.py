@@ -7,6 +7,9 @@ app_name = 'bo'
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
 
+    # 대시보드 모달이 fetch 하는 OpenAI 사용량 JSON 엔드포인트 (Phase 4-4)
+    path('api/openai-usage/', views.openai_usage, name='openai_usage'),
+
     # 파일관리
     path('files/', views.files, name='files'),
     path('files/upload/', views.upload, name='upload'),

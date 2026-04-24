@@ -1,4 +1,5 @@
 from .dashboard import dashboard
+from .openai_usage import openai_usage
 from .files import files, upload, review, confirm, delete
 from .prompts import prompts_index, prompts_edit, prompts_update
 from .qa import (
