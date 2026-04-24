@@ -269,10 +269,13 @@ a { color: inherit; text-decoration: none; }
 }
 .input-icon-left  { left: var(--space-3); }
 .input-icon-right { right: 0; }
-.input-with-icon-left {
+/* `.input` 가 padding shorthand 로 좌/우 패딩을 덮어쓰기 때문에, 같은 specificity
+   로는 패딩이 먹히지 않는다. `.input.input-with-icon-*` 로 특이도를 한 단계 올려
+   shorthand 를 확실히 이긴다. */
+.input.input-with-icon-left {
   padding-left: calc(var(--space-3) + 14px + var(--space-2));
 }
-.input-with-icon-right {
+.input.input-with-icon-right {
   padding-right: calc(var(--space-3) + 20px + var(--space-2));
 }
 .input-icon-btn {
