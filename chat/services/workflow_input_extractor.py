@@ -114,14 +114,28 @@ def extract(
         if matched is not None:
             extracted[name] = matched
 
-    # 5) default 채우기 — required=False 이고 아직 비어있으면 default 적용.
+    # 5) text — 질문 원문을 그대로 담는 필드(Phase 6-3). regex 가 아닌 "질문 자체"
+    # 를 담는 성격이라 여기서 마지막 단계에 채운다. 이미 외부가 값을 넣어준 경우에는
+    # 존중한다 (이 함수는 `raw` 인자를 받지 않으니, 그 경우는 호출 경로 상 workflow_node
+    # 의 `state.workflow_input` 우선 처리로 이미 보장된다).
+    stripped_question = (question or '').strip()
+    for name, spec in schema.items():
+        if spec.type != 'text' or name in extracted:
+            continue
+        if stripped_question:
+            extracted[name] = stripped_question
+        elif spec.default is not None:
+            extracted[name] = spec.default
+
+    # 6) default 채우기 — required=False 이고 아직 비어있으면 default 적용.
     for name, spec in schema.items():
         if name in extracted:
             continue
         if not spec.required and spec.default is not None:
             extracted[name] = spec.default
 
-    # 6) LLM fallback — required 인데 아직 비어있는 필드가 있으면.
+    # 7) LLM fallback — required 인데 아직 비어있는 필드가 있으면.
+    #    text 필드는 이미 5) 에서 질문으로 채워지므로 여기 걸리지 않는다.
     missing_required = [
         name for name, spec in schema.items()
         if spec.required and name not in extracted

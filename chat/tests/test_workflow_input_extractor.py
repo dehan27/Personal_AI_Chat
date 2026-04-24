@@ -150,6 +150,55 @@ class ExtractMoneyMaskingTests(SimpleTestCase):
         self.assertEqual(out.get('values'), [50, 60, 70])
 
 
+class ExtractTextSchemaTests(SimpleTestCase):
+    """Phase 6-3: 'text' 타입 필드는 질문 원문을 그대로 담는다."""
+
+    def setUp(self):
+        self._llm_patch = _mock_llm_off()
+        self._llm_patch.start()
+        self.addCleanup(self._llm_patch.stop)
+
+    def test_required_text_field_filled_with_full_question(self):
+        schema = {'query': FieldSpec(type='text', required=True)}
+        out, usage, model = extract(
+            '표에서 본인 상 경조금 알려줘',
+            [],
+            schema,
+        )
+        self.assertEqual(out['query'], '표에서 본인 상 경조금 알려줘')
+        # text 필드는 질문으로 채워지니 LLM 호출이 일어날 이유 없음.
+        self.assertIsNone(usage)
+        self.assertIsNone(model)
+
+    def test_text_field_trims_whitespace(self):
+        schema = {'query': FieldSpec(type='text', required=True)}
+        out, *_ = extract('   몇 개월이야?  ', [], schema)
+        self.assertEqual(out['query'], '몇 개월이야?')
+
+    def test_text_field_uses_default_when_question_empty(self):
+        schema = {
+            'query': FieldSpec(
+                type='text', required=False, default='(empty)',
+            ),
+        }
+        out, *_ = extract('', [], schema)
+        self.assertEqual(out['query'], '(empty)')
+
+    def test_mixed_schema_text_plus_other_fields(self):
+        schema = {
+            'start': FieldSpec(type='date', required=True),
+            'query': FieldSpec(type='text', required=True),
+        }
+        out, *_ = extract(
+            '2025-01-01 부터 기록을 찾아줘',
+            [],
+            schema,
+        )
+        # 날짜는 regex 로, query 는 전체 질문으로.
+        self.assertEqual(out['start'], '2025-01-01')
+        self.assertEqual(out['query'], '2025-01-01 부터 기록을 찾아줘')
+
+
 class _UsageStub:
     prompt_tokens = 10
     completion_tokens = 5

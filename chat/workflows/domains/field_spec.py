@@ -5,14 +5,17 @@
 뽑아낸다. 프로그램 어디서도 타입을 동적으로 바꾸지 않는다 — 의도를 또렷이
 드러내기 위해 frozen dataclass + 문자열 리터럴 type.
 
-지원 타입 (Phase 6-2 범위):
+지원 타입:
   - 'date'          — ISO/한국어 표기 날짜 1 개
   - 'number'        — 정수 1 개
   - 'money'         — 원 단위 금액 (단위 접미어 포함 가능)
   - 'enum'          — enum_values 의 한 키로 정규화
   - 'number_list'   — 여러 숫자 → `list[int]`
+  - 'text'          — 자유형 문자열 1 개 (Phase 6-3). 질문 원문을 그대로 담는
+                      용도 — extractor 가 regex 단계에서 비워두고 마지막에
+                      'question' 그대로 채운다. table_lookup 의 `query` 가 예시.
 
-확장 후보(미구현): 'text', 'date_list', 'money_list'.
+확장 후보(미구현): 'date_list', 'money_list'.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ SUPPORTED_TYPES: Tuple[str, ...] = (
     'money',
     'enum',
     'number_list',
+    'text',
 )
 
 

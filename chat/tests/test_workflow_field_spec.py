@@ -31,8 +31,16 @@ class FieldSpecTests(SimpleTestCase):
         FieldSpec(type='money')
         FieldSpec(type='enum', enum_values={'k': ('v',)})
         FieldSpec(type='number_list')
+        FieldSpec(type='text')
 
     def test_supported_types_exposed(self):
         self.assertIn('date', SUPPORTED_TYPES)
         self.assertIn('money', SUPPORTED_TYPES)
         self.assertIn('number_list', SUPPORTED_TYPES)
+        self.assertIn('text', SUPPORTED_TYPES)
+
+    def test_text_type_without_enum_values(self):
+        # Phase 6-3: 'text' 필드는 enum_values 가 비어있어야 한다.
+        FieldSpec(type='text', required=True)
+        with self.assertRaises(ValueError):
+            FieldSpec(type='text', enum_values={'k': ('v',)})
