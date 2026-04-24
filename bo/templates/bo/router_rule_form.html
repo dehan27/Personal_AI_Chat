@@ -1,0 +1,118 @@
+{% extends 'bo/base.html' %}
+
+{% block title %}{% if mode == 'new' %}새 rule{% else %}rule 편집 · {{ rule.name }}{% endif %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .rule-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .rule-form .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .rule-form label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+  }
+  .rule-form .helptext {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+  .rule-form input[type='text'],
+  .rule-form input[type='number'],
+  .rule-form select,
+  .rule-form textarea {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    outline: none;
+  }
+  .rule-form input:focus,
+  .rule-form select:focus,
+  .rule-form textarea:focus {
+    border-color: var(--color-accent-border);
+    box-shadow: 0 0 0 3px var(--color-accent-light);
+  }
+  .rule-form .field-enabled {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .rule-form .field-enabled input {
+    width: auto;
+  }
+  .rule-form .errorlist {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    color: var(--color-danger, hsl(0,68%,50%));
+    font-size: var(--font-size-xs);
+  }
+  .rule-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="page-title">{% if mode == 'new' %}새 Router Rule{% else %}Router Rule 편집{% endif %}</h1>
+    <p class="page-description">저장 즉시 라우터가 다음 요청부터 이 rule 을 참조합니다.</p>
+  </div>
+  <a href="{% url 'bo:router_rules' %}" class="btn">← 목록으로</a>
+</header>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% else %}alert-success{% endif %}">
+      {{ message }}
+    </div>
+  {% endfor %}
+{% endif %}
+
+<section class="card">
+  <form method="post" class="rule-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    {% for field in form %}
+      <div class="field {% if field.name == 'enabled' %}field-enabled{% endif %}">
+        <label for="{{ field.id_for_label }}">
+          {% if field.name == 'name' %}이름
+          {% elif field.name == 'route' %}경로 (route)
+          {% elif field.name == 'match_type' %}매칭 방식
+          {% elif field.name == 'pattern' %}패턴
+          {% elif field.name == 'priority' %}우선순위
+          {% elif field.name == 'enabled' %}활성화
+          {% elif field.name == 'description' %}메모
+          {% else %}{{ field.label }}{% endif %}
+        </label>
+        {{ field }}
+        {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+        {% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    {% endfor %}
+
+    <div class="rule-form-actions">
+      <a href="{% url 'bo:router_rules' %}" class="btn">취소</a>
+      <button type="submit" class="btn btn-primary">{% if mode == 'new' %}추가{% else %}저장{% endif %}</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
