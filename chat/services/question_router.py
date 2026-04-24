@@ -1,4 +1,4 @@
-"""질문 분류기 (Phase 4-2).
+"""질문 분류기 (Phase 4-2 / Phase 6-1 확장).
 
 graph 의 router_node 가 부른다. 우선순위는:
 
@@ -12,6 +12,21 @@ Phase 4-1 동작 그대로 유지된다.
 
 workflow 가 agent 보다 먼저인 이유: 정형 계산은 저렴·안정적이므로 애매할 때
 workflow 쪽이 안전. agent 는 탐색·비교가 명확할 때만 사용.
+
+Phase 6-1 의 역할 정리:
+
+- 코드 키워드(`WORKFLOW_KEYWORDS` / `AGENT_KEYWORDS`) 는 **route 선택만** 담당.
+  어떤 generic workflow(예: `date_calculation`) 를 탈지를 결정하지 않는다.
+  키워드 경로로 `route=workflow` 가 된 질문은 `workflow_key=''` 를 들고
+  graph 로 내려가고, `workflow_node` 가 등록된 key 가 없음을 보고 single_shot
+  으로 폴백한다 — 즉 Phase 4-1 동작과 동일.
+- `workflow_key` 를 실제로 채우려면 BO `RouterRule` 에서 해당 rule 의 drop-down
+  으로 domain 을 지정해야 한다 (예: `pattern='며칠'`, `route='workflow'`,
+  `workflow_key='date_calculation'`).
+- 이 키워드들이 '회사 규정(퇴직금·연차)' 같은 이름을 달고 있는 건 fallback 기본
+  동작 정의를 위한 패턴 신호일 뿐, 특정 조직 도메인과 묶이지 않는다. 회사 전용
+  계산식은 Phase 6 범위 밖이며 (설계 §4), 운영자가 BO rule 로 원하는 매핑을
+  만들도록 유도하는 게 기본 방향.
 """
 
 from dataclasses import dataclass, field
