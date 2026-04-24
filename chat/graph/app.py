@@ -4,7 +4,11 @@ view / service 는 오직 run_chat_graph(question, history) 만 쓴다. state �
 node 구성이 바뀌어도 이 함수의 시그니처·반환·예외는 고정이다 (Phase 3 이후에도).
 
 현재 graph shape:
-    START → router → (conditional on state.route) → single_shot → END
+    START → router → (conditional on state.route)
+                        single_shot → END
+                        workflow   → END   (Phase 6-1 부터; 내부에서 dispatch 또는
+                                              single_shot fallback)
+                        agent      → single_shot → END   (Phase 7 대기)
 """
 
 from functools import lru_cache
@@ -13,6 +17,7 @@ from langgraph.graph import END, START, StateGraph
 
 from chat.graph.nodes.router import router_node
 from chat.graph.nodes.single_shot import single_shot_node
+from chat.graph.nodes.workflow import workflow_node
 from chat.graph.routes import ROUTE_AGENT, ROUTE_SINGLE_SHOT, ROUTE_WORKFLOW
 from chat.graph.state import GraphState
 from chat.services.single_shot.types import QueryPipelineError, QueryResult
@@ -24,6 +29,7 @@ def _compiled_graph():
     builder = StateGraph(GraphState)
     builder.add_node('router', router_node)
     builder.add_node('single_shot', single_shot_node)
+    builder.add_node('workflow', workflow_node)
 
     builder.add_edge(START, 'router')
     builder.add_conditional_edges(
@@ -32,15 +38,16 @@ def _compiled_graph():
         lambda state: state['route'],
         {
             ROUTE_SINGLE_SHOT: 'single_shot',
-            # Phase 4-1 동안 workflow/agent 노드가 아직 없어 single_shot 으로
-            # 내부 포워딩한다. Phase 5~6 에서 ROUTE_WORKFLOW 키를 실제 workflow
-            # 노드 이름으로, Phase 7 에서 ROUTE_AGENT 키를 agent 노드 이름으로
-            # 교체하면 해당 경로가 열린다.
-            ROUTE_WORKFLOW: 'single_shot',
+            # Phase 6-1: workflow route 는 workflow 노드로. 노드 내부에서
+            # workflow_key 가 비었거나 미등록이면 single_shot 으로 폴백하므로
+            # 기존 Phase 4-1 동작과 회귀 0.
+            ROUTE_WORKFLOW: 'workflow',
+            # Phase 7 이전: agent 는 여전히 single_shot 포워딩.
             ROUTE_AGENT: 'single_shot',
         },
     )
     builder.add_edge('single_shot', END)
+    builder.add_edge('workflow', END)
 
     return builder.compile()
 
