@@ -62,12 +62,37 @@ def _ok_date_calculation(result: WorkflowResult) -> str:
     return f'{start} 부터 {end} 까지 {result.value}{unit_label} 입니다.'
 
 
+# op 별 라벨 + 맞는 한국어 조사(은/는). 받침 유무가 달라 일괄 '은' 을 쓰면
+# "합계은"/"차이은" 처럼 어색해지기 때문에 op 마다 고정한다.
+_AMOUNT_OP_LABELS: Mapping[str, tuple[str, str]] = {
+    'sum':     ('합계', '는'),
+    'average': ('평균', '은'),
+    'diff':    ('차이', '는'),
+}
+
+
+def _ok_amount_calculation(result: WorkflowResult) -> str:
+    details = result.details or {}
+    op = details.get('op', '')
+    label, particle = _AMOUNT_OP_LABELS.get(op, ('결과', '는'))
+    value = result.value
+    # 정수는 천단위 콤마, 실수는 소수 둘째 자리까지 정리 — 평균 결과의 가독성.
+    if isinstance(value, int):
+        value_str = f'{value:,}'
+    elif isinstance(value, float):
+        value_str = f'{value:,.2f}'
+    else:
+        value_str = str(value)
+    return f'{label}{particle} {value_str} 입니다.'
+
+
 def _ok_default(result: WorkflowResult) -> str:
     return f'결과: {result.value}'
 
 
 _ok_formatters: Mapping[str, Callable[[WorkflowResult], str]] = {
     'date_calculation': _ok_date_calculation,
+    'amount_calculation': _ok_amount_calculation,
 }
 
 

@@ -15,10 +15,12 @@ Phase 5 `core/` 가 범용 유틸·타입이라면, `domains/` 는 그 위에서
 
 from chat.workflows.domains import registry
 from chat.workflows.domains.dispatch import run
+from chat.workflows.domains.field_spec import FieldSpec
 from chat.workflows.domains import general  # noqa: F401  (register 부작용)
 
 
 __all__ = [
     'registry',
     'run',
+    'FieldSpec',
 ]

@@ -53,6 +53,12 @@ PROMPT_REGISTRY: list[PromptEntry] = [
         description='후속 질문이 "비싼거" 처럼 맥락에 의존할 때, 직전 대화를 반영해 자립 검색어로 바꾸는 지시문. retrieval 앞단에서만 사용되며 최종 답변에는 영향을 주지 않는다.',
         relative_path='chat/query_rewriter.md',
     ),
+    PromptEntry(
+        key='chat-workflow-input-extractor',
+        title='Workflow 입력 추출 프롬프트',
+        description='workflow 경로에서 regex 로 채우지 못한 필수 입력 값을 LLM 이 JSON 으로 채워넣을 때 쓰는 지시문. Phase 6-2 에서 도입.',
+        relative_path='chat/workflow_input_extractor.md',
+    ),
 ]
 
 # O(1) 조회용

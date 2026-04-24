@@ -73,3 +73,35 @@ class DateCalculationTests(SimpleTestCase):
         self.assertTrue(registry.has(WORKFLOW_KEY))
         entry = registry.get(WORKFLOW_KEY)
         self.assertEqual(entry.status, registry.STATUS_STABLE)
+
+    def test_input_schema_exposes_start_end_unit(self):
+        """Phase 6-2: schema 가 regex extractor 에 읽히는 모양으로 올라가는지."""
+        from chat.workflows.domains import registry
+        schema = registry.get(WORKFLOW_KEY).input_schema
+        self.assertIn('start', schema)
+        self.assertIn('end', schema)
+        self.assertIn('unit', schema)
+        self.assertEqual(schema['start'].type, 'date')
+        self.assertTrue(schema['start'].required)
+        self.assertEqual(schema['unit'].default, 'days')
+        self.assertIn('days', schema['unit'].enum_values)
+        self.assertIn('months', schema['unit'].enum_values)
+
+    def test_natural_language_question_extracts_inputs_end_to_end(self):
+        """extract(...) → run_workflow(...) 로 이어 붙여 실제 체감 결과 확인."""
+        from chat.services.workflow_input_extractor import extract
+        from chat.workflows.domains import registry
+
+        schema = registry.get(WORKFLOW_KEY).input_schema
+        out, _, _ = extract(
+            '2025-01-01 부터 2025-02-01 까지 며칠?',
+            [],
+            schema,
+        )
+        self.assertEqual(out['start'], '2025-01-01')
+        self.assertEqual(out['end'], '2025-02-01')
+        self.assertEqual(out['unit'], 'days')
+
+        result = self._run(out)
+        self.assertEqual(result.status, WorkflowStatus.OK)
+        self.assertEqual(result.value, 31)

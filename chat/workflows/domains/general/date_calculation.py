@@ -32,9 +32,34 @@ from chat.workflows.core import (
     years_between,
 )
 from chat.workflows.domains import registry
+from chat.workflows.domains.field_spec import FieldSpec
 
 
 WORKFLOW_KEY = 'date_calculation'
+
+INPUT_SCHEMA = {
+    'start': FieldSpec(
+        type='date',
+        required=True,
+        aliases=('start', '시작', '시작일', '부터'),
+    ),
+    'end': FieldSpec(
+        type='date',
+        required=True,
+        aliases=('end', '종료', '종료일', '끝', '까지'),
+    ),
+    'unit': FieldSpec(
+        type='enum',
+        required=False,
+        default='days',
+        aliases=('unit', '단위'),
+        enum_values={
+            'days':   ('일', '며칠', 'days'),
+            'months': ('개월', '달', 'months'),
+            'years':  ('년', 'years'),
+        },
+    ),
+}
 
 # 지원하는 기간 단위 — 한국어 표시용 라벨을 함께 묶어 reply 포맷에서 쓴다.
 _SUPPORTED_UNITS: dict[str, str] = {
@@ -124,5 +149,6 @@ registry.register(
         description='두 날짜 사이 기간(일/개월/년) 을 계산합니다.',
         status=registry.STATUS_STABLE,
         factory=lambda: DateCalculationWorkflow(),
+        input_schema=INPUT_SCHEMA,
     )
 )

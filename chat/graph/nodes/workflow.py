@@ -1,26 +1,26 @@
-"""Workflow node — `state.workflow_key` 에 맞춰 domain workflow 를 실행 (Phase 6-1).
+"""Workflow node — `state.workflow_key` 에 맞춰 domain workflow 를 실행.
 
 동작 요약:
     - `workflow_key` 가 비어있거나 registry 에 등록되지 않은 값 → single_shot 폴백
       (Phase 4-1 과 동일한 응답).
-    - 등록된 key → `dispatch.run(key, workflow_input)` 실행 → `WorkflowResult` 를
-      자연어 `reply` 문자열로 포맷해 `QueryResult` 로 실어서 반환.
+    - 등록된 key → `workflow_input_extractor.extract(...)` 로 자연어 질문에서
+      입력을 뽑고, `dispatch.run(key, input)` 실행 → `WorkflowResult` 를
+      자연어 `reply` 로 포맷해 `QueryResult` 로 반환.
 
-Phase 6-1 은 workflow 가 **결정적 계산기** 역할만 한다 — OpenAI 호출 없음.
-응답 문자열 조립은 `chat.workflows.domains.reply.build_reply_from_result` 가
-맡는다 (별도 커밋).
-
-`workflow_input` 은 현재 state 에 채워지는 경로가 없다. 즉 현재 흐름에선
-대부분 `MISSING_INPUT` 으로 귀결되며, 사용자는 "어떤 값이 필요한지" 를 자연스
-럽게 전달받는다. 자연어 질문에서 start/end 같은 값을 자동 추출하는 로직은
-Phase 6-2 의 과제.
+Phase 6-2 변경 사항:
+    - 기존에 항상 `{}` 였던 `workflow_input` 을 extractor 가 채운다.
+    - 외부가 명시적으로 `state.workflow_input` 에 값을 실어 보내면(테스트 편의)
+      그걸 우선 사용하고 extractor 호출은 건너뛴다.
+    - extractor 의 LLM fallback 이 탄 경우에만 `record_token_usage` 호출.
 """
 
 import logging
 
 from chat.graph.state import GraphState
 from chat.graph.nodes.single_shot import single_shot_node
+from chat.services.single_shot.postprocess import record_token_usage
 from chat.services.single_shot.types import QueryResult
+from chat.services.workflow_input_extractor import extract as extract_workflow_input
 from chat.workflows.domains import dispatch, registry
 from chat.workflows.domains.reply import build_reply_from_result
 
@@ -37,7 +37,21 @@ def workflow_node(state: GraphState) -> dict:
         # 기존 single_shot 응답과 동일하게 동작해서 회귀 0.
         return single_shot_node(state)
 
-    workflow_input = state.get('workflow_input') or {}
+    # 외부가 미리 채워 보낸 workflow_input 이 있으면 그걸 우선. 없을 때만
+    # extractor 를 돌려 질문/history 에서 값을 뽑는다 (Phase 6-2).
+    explicit_input = state.get('workflow_input')
+    if explicit_input is not None:
+        workflow_input = dict(explicit_input)
+    else:
+        entry = registry.get(key)
+        workflow_input, usage, model = extract_workflow_input(
+            question=state.get('question') or '',
+            history=state.get('history') or [],
+            schema=entry.input_schema,
+        )
+        if usage and model:
+            record_token_usage(model, usage)
+
     result = dispatch.run(key, workflow_input)
     reply = build_reply_from_result(result, workflow_key=key)
 
