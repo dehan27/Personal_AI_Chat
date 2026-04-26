@@ -65,6 +65,12 @@ PROMPT_REGISTRY: list[PromptEntry] = [
         description='table_lookup workflow 가 retrieval 로 확보한 마크다운 표 중에서 사용자가 묻는 셀 하나를 JSON 으로 집어 내도록 지시. Phase 6-3.',
         relative_path='chat/table_lookup.md',
     ),
+    PromptEntry(
+        key='chat-agent-react',
+        title='Agent ReAct 시스템 프롬프트',
+        description='generic agent 의 ReAct loop 가 매 step JSON 한 줄로 다음 action 또는 final_answer 를 결정하도록 지시. Phase 7-1.',
+        relative_path='chat/agent_react.md',
+    ),
 ]
 
 # O(1) 조회용
