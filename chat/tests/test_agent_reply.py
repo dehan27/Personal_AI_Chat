@@ -3,12 +3,16 @@
 agent 가 만들 수 있는 세 status (OK / NOT_FOUND / UPSTREAM_ERROR) 의 카피
 변환 + agent 가 만들지 않아야 하는 status (MISSING_INPUT / INVALID_INPUT /
 UNSUPPORTED) 가 ValueError 로 가시화되는지 (fail-fast invariant) 확인.
+
+Phase 8-1: 시그니처가 BaseResult Protocol 을 받도록 좁아짐 — `AgentResult` 입력
+케이스도 추가 (status/value/details 가 같으면 동일 결과).
 """
 
 from django.test import SimpleTestCase
 
 from chat.services.agent.reply import build_reply_from_agent_result
-from chat.workflows.core import WorkflowResult
+from chat.services.agent.result import AgentResult, AgentTermination
+from chat.workflows.core import WorkflowResult, WorkflowStatus
 
 
 class AgentReplyTests(SimpleTestCase):
@@ -78,3 +82,35 @@ class AgentReplyTests(SimpleTestCase):
         with self.assertRaises(ValueError) as ctx:
             build_reply_from_agent_result(result)
         self.assertIn('unsupported', str(ctx.exception))
+
+
+class AgentReplyAcceptsAgentResultTests(SimpleTestCase):
+    """Phase 8-1: BaseResult Protocol 이면 모두 받는다 — `AgentResult` 입력 케이스."""
+
+    def test_ok_agent_result_returns_value(self):
+        r = AgentResult(
+            status=WorkflowStatus.OK,
+            value='final answer body',
+            termination=AgentTermination.FINAL_ANSWER,
+        )
+        self.assertEqual(build_reply_from_agent_result(r), 'final answer body')
+
+    def test_not_found_agent_result_uses_reason_from_details(self):
+        r = AgentResult(
+            status=WorkflowStatus.NOT_FOUND,
+            details={'reason': '관련 자료가 없었습니다.'},
+            termination=AgentTermination.NO_MORE_USEFUL_TOOLS,
+        )
+        self.assertEqual(
+            build_reply_from_agent_result(r), '관련 자료가 없었습니다.',
+        )
+
+    def test_upstream_error_agent_result_uses_reason(self):
+        r = AgentResult(
+            status=WorkflowStatus.UPSTREAM_ERROR,
+            details={'reason': '잠시 후 다시 시도해 주세요.'},
+            termination=AgentTermination.FATAL_ERROR,
+        )
+        self.assertEqual(
+            build_reply_from_agent_result(r), '잠시 후 다시 시도해 주세요.',
+        )

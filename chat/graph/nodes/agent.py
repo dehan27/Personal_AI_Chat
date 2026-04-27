@@ -1,4 +1,4 @@
-"""Agent node — `ROUTE_AGENT` 가 들어왔을 때 실행되는 graph 노드 (Phase 7-2).
+"""Agent node — `ROUTE_AGENT` 가 들어왔을 때 실행되는 graph 노드 (Phase 7-2; Phase 8-1 sources surface).
 
 내부 흐름은 Phase 6-3 의 `workflow_node` 를 거울처럼 따라간다:
 
@@ -6,10 +6,11 @@
        로 self-contained 검색어 생성. rewriter LLM usage 가 잡히면
        `record_token_usage` 로 기록.
     2. `run_agent(effective_question, history=history)` — Phase 7-1 의 ReAct
-       loop 진입점. 반환은 `WorkflowResult`.
+       loop 진입점. 반환은 `AgentResult` (Phase 8-1 — 7-1 의 WorkflowResult 에서 변경).
     3. `build_reply_from_agent_result(result)` 로 한국어 reply 문자열 생성.
-    4. `QueryResult(reply=..., sources=[], total_tokens=0, chat_log_id=None)` 로
-       감싸 view 가 기대하는 모양으로 반환.
+    4. `QueryResult(reply=..., sources=result.sources_as_dicts(), ...)` —
+       Phase 8-1 부터 sources 를 status 무관 노출. NOT_FOUND 종료여도 그동안 모은
+       evidence 는 사용자에게 보여 후속 질문 단서가 된다.
 
 설계 결정 (Plan §1):
 
@@ -19,6 +20,8 @@
   `chat/services/agent/react.py` 안에서 이미 매 호출마다 처리됨 → 이중 기록 없음.
 - rewriter 가 LLM 실패 시 원본을 반환하므로 graph 단 try/except 불필요
   (Phase 4-3 결정 그대로).
+- Phase 8-1: sources 정책은 `result.sources` 가 이미 dedup + low_relevance 제외
+  처리된 SourceRef 튜플. node 단은 `sources_as_dicts()` 호출만 해 dict 형식으로 변환.
 """
 
 from __future__ import annotations
@@ -57,17 +60,18 @@ def agent_node(state: GraphState) -> dict:
     reply = build_reply_from_agent_result(result)
 
     logger.info(
-        'agent 실행: status=%s value=%r',
+        'agent 실행: status=%s value=%r sources=%d',
         result.status.value,
         result.value,
+        len(result.sources),
     )
 
-    # `sources` / `total_tokens` 은 본 PR 범위 밖이라 0/[] 로 둔다.
-    # 출처·도구 사용 요약 surface 는 후속 Phase 책임 (Plan §Out of Scope).
+    # Phase 8-1: sources 는 status 무관 노출. result.sources 가 이미 dedup +
+    # low_relevance 제외 처리됨. `total_tokens` 는 별도 phase 책임.
     return {
         'result': QueryResult(
             reply=reply,
-            sources=[],
+            sources=result.sources_as_dicts(),
             total_tokens=0,
             chat_log_id=None,
         ),

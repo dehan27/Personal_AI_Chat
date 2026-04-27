@@ -3,6 +3,9 @@
 `run_agent` / `rewrite_query_with_history` / `record_token_usage` 모두 mock 해서
 agent_node 자체의 분기·합성 동작만 격리 검증. graph 결선 (`add_node` /
 conditional edge) 자체는 `test_graph_agent_wiring.py` 의 책임.
+
+Phase 8-1: `run_agent` 가 `AgentResult` 를 반환해 mock 도 그 타입 — `sources`
+1급 필드를 노드가 `result.sources_as_dicts()` 로 노출.
 """
 
 from types import SimpleNamespace
@@ -11,23 +14,41 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from chat.graph.nodes.agent import agent_node
+from chat.services.agent.result import (
+    AgentResult,
+    AgentTermination,
+    SourceRef,
+)
 from chat.services.single_shot.types import QueryResult
-from chat.workflows.core import WorkflowResult
+from chat.workflows.core import WorkflowStatus
 
 
-def _ok(value):
-    return WorkflowResult.ok(
+def _ok(value, *, sources=()):
+    return AgentResult(
+        status=WorkflowStatus.OK,
         value=value,
         details={'termination': 'final_answer'},
+        termination=AgentTermination.FINAL_ANSWER,
+        sources=tuple(sources),
     )
 
 
-def _not_found(reason=''):
-    return WorkflowResult.not_found(reason)
+def _not_found(reason='', *, sources=()):
+    return AgentResult(
+        status=WorkflowStatus.NOT_FOUND,
+        details={'reason': reason} if reason else {},
+        termination=AgentTermination.NO_MORE_USEFUL_TOOLS,
+        sources=tuple(sources),
+    )
 
 
-def _upstream_error(reason=''):
-    return WorkflowResult.upstream_error(reason)
+def _upstream_error(reason='', *, sources=()):
+    return AgentResult(
+        status=WorkflowStatus.UPSTREAM_ERROR,
+        details={'reason': reason} if reason else {},
+        termination=AgentTermination.FATAL_ERROR,
+        sources=tuple(sources),
+    )
 
 
 class _UsageStub:
@@ -149,3 +170,40 @@ class AgentNodeTests(SimpleTestCase):
         self.assertEqual(result.sources, [])
         self.assertEqual(result.total_tokens, 0)
         self.assertIsNone(result.chat_log_id)
+
+    # ---------- Phase 8-1: sources surface ----------
+
+    def test_ok_result_sources_passed_to_query_result_as_dicts(self):
+        # AgentResult.sources (SourceRef tuple) → QueryResult.sources (list of dicts).
+        refs = (
+            SourceRef(name='a.pdf', url='/media/a'),
+            SourceRef(name='b.pdf', url='/media/b'),
+        )
+        with self._patch_runtime(_ok('답', sources=refs)), \
+                self._patch_rewriter(), \
+                self._patch_token_recorder():
+            out = agent_node({'question': 'Q', 'history': []})
+        self.assertEqual(
+            out['result'].sources,
+            [{'name': 'a.pdf', 'url': '/media/a'},
+             {'name': 'b.pdf', 'url': '/media/b'}],
+        )
+
+    def test_not_found_result_sources_still_exposed(self):
+        # status 무관 정책 — NOT_FOUND 여도 그동안 모은 sources 는 노출.
+        refs = (SourceRef(name='hint.pdf', url='/media/hint'),)
+        with self._patch_runtime(_not_found('근거 부족', sources=refs)), \
+                self._patch_rewriter(), \
+                self._patch_token_recorder():
+            out = agent_node({'question': 'Q', 'history': []})
+        self.assertEqual(
+            out['result'].sources,
+            [{'name': 'hint.pdf', 'url': '/media/hint'}],
+        )
+
+    def test_no_sources_result_yields_empty_list(self):
+        with self._patch_runtime(_ok('답')), \
+                self._patch_rewriter(), \
+                self._patch_token_recorder():
+            out = agent_node({'question': 'Q', 'history': []})
+        self.assertEqual(out['result'].sources, [])
