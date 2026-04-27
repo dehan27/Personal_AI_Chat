@@ -71,9 +71,31 @@ class BuildMessagesTests(SimpleTestCase):
         payload = _build(state)[1]['content']
         self.assertTrue(payload.rstrip().endswith('Return JSON only:'))
 
-    def test_last_tool_call_surfaced_for_repeat_avoidance(self):
+    def test_recent_tool_calls_surfaced_for_repeat_avoidance(self):
+        # Phase 7-4: 직전 1건 → 최근 K=5 건. 한 건일 때도 새 형식.
         state = AgentState(question='Q', history=[])
         state.record_tool_call('retrieve_documents', {'query': '경조사'})
         payload = _build(state)[1]['content']
-        self.assertIn('Last tool call: retrieve_documents', payload)
+        self.assertIn('Recent tool calls (last 1):', payload)
+        self.assertIn('retrieve_documents', payload)
         self.assertIn('경조사', payload)
+        self.assertIn('Do NOT repeat', payload)
+
+    def test_recent_tool_calls_none_when_no_history(self):
+        state = AgentState(question='Q', history=[])
+        payload = _build(state)[1]['content']
+        self.assertIn('Recent tool calls (none yet).', payload)
+
+    def test_recent_tool_calls_caps_at_last_K(self):
+        # Phase 7-4: 6+ 건 호출돼도 last 5 만 노출.
+        state = AgentState(question='Q', history=[])
+        for i in range(7):
+            state.record_tool_call('retrieve_documents', {'query': f'q{i}'})
+        payload = _build(state)[1]['content']
+        self.assertIn('Recent tool calls (last 5):', payload)
+        # 가장 오래된 (q0, q1) 는 잘려서 안 보임.
+        self.assertNotIn('"query": "q0"', payload)
+        self.assertNotIn('"query": "q1"', payload)
+        # 최근 5개 (q2~q6) 는 모두 보임.
+        for i in range(2, 7):
+            self.assertIn(f'"query": "q{i}"', payload)
