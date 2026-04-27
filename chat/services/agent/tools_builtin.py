@@ -171,13 +171,27 @@ def _retrieve_callable(arguments: Mapping[str, Any]) -> dict:
     Phase 7-3 부터 반환을 `{'query': ..., 'hits': [...]}` dict 로 감싼다 — query
     를 `_summarize_retrieve` 까지 흘려 keyword-aware windowing 을 가능하게 하기
     위한 우회. `Tool.summarize: Callable[[Any], str]` 시그니처는 그대로 둬서 다른
-    도구 / 외부 코드 영향 없음. 이 dict 는 `tools.call` 내부에서 summarize 직전에만
-    보이고, 외부에 노출되는 건 `Observation.summary` 문자열 뿐이라 외부 계약 변경 0.
+    도구 / 외부 코드 영향 없음.
+
+    Phase 8-1: 결과 dict 에 `'evidence': [SourceRef]` 키 추가 — `tools.call` 이
+    이 키를 보고 `Observation.evidence` 로 부착. **`hits[0]` 한 건만** evidence
+    후보 (top-N=5 다 노출하면 sources 폭주, P2-2 단일 정책).
     """
+    from chat.services.agent.result import SourceRef
+
     query = arguments['query']
+    hits = _retrieve(query)
+    evidence = []
+    if hits:
+        first = hits[0]
+        evidence.append(SourceRef(
+            name=getattr(first, 'document_name', None) or '(출처 미상)',
+            url=getattr(first, 'document_url', None) or '',
+        ))
     return {
         'query': query,
-        'hits': _retrieve(query),
+        'hits': hits,
+        'evidence': evidence,
     }
 
 

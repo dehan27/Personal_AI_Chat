@@ -193,6 +193,67 @@ class RetrieveDocumentsToolTests(SimpleTestCase):
         self.assertIn('경조금', obs.summary)
 
 
+class RetrieveDocumentsEvidenceTests(SimpleTestCase):
+    """Phase 8-1: `_retrieve_callable` 의 'evidence' 키는 hits[0] 한 건만 부착.
+
+    top-N=3 모두 sources 로 노출하면 폭주 — top-1 정책 (P2-2).
+    `tools.call` 이 dict 의 'evidence' 키를 obs.evidence 로 자동 부착.
+    """
+
+    def test_evidence_contains_only_top_one_source_ref(self):
+        from chat.services.agent.result import SourceRef
+
+        chunks = [
+            SimpleNamespace(
+                document_name='top.pdf',
+                document_url='/media/top',
+                content='경조금 50만원 표',
+            ),
+            SimpleNamespace(
+                document_name='second.pdf',
+                document_url='/media/second',
+                content='경조금 30만원',
+            ),
+            SimpleNamespace(
+                document_name='third.pdf',
+                document_url='/media/third',
+                content='경조금 10만원',
+            ),
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '경조금'})
+        # hits[0] 한 건만.
+        self.assertEqual(len(obs.evidence), 1)
+        ref = obs.evidence[0]
+        self.assertIsInstance(ref, SourceRef)
+        self.assertEqual(ref.name, 'top.pdf')
+        self.assertEqual(ref.url, '/media/top')
+
+    def test_zero_hits_evidence_empty(self):
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=[],
+        ):
+            obs = tools.call('retrieve_documents', {'query': '없음'})
+        self.assertEqual(obs.evidence, ())
+
+    def test_missing_attributes_fall_back_to_safe_defaults(self):
+        # document_name / document_url 이 누락된 hit 도 (출처 미상) / '' 로 안전 처리.
+        chunk = SimpleNamespace(content='경조금 자료')
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=[chunk],
+        ):
+            obs = tools.call('retrieve_documents', {'query': '경조금'})
+        self.assertEqual(len(obs.evidence), 1)
+        ref = obs.evidence[0]
+        self.assertEqual(ref.name, '(출처 미상)')
+        self.assertEqual(ref.url, '')
+
+
 class FindCanonicalQAToolTests(SimpleTestCase):
     def test_delegates_to_qa_cache(self):
         hit = SimpleNamespace(

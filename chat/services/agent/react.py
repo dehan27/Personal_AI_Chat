@@ -11,7 +11,7 @@
        그 외                      → "unknown action" 실패 Observation.
     5. iteration_count += 1; max / 연속 실패 / 반복 호출 가드 검사.
 
-종료 → `to_workflow_result(termination, value=..., reason=...)` 로 변환해 반환.
+종료 → `to_agent_result(termination, value=..., reason=..., state=state)` 로 변환해 반환 (Phase 8-1 — 이전엔 to_workflow_result).
 
 Phase 7-1 은 graph 와 연결되지 않으므로, 이 함수는 직접 호출(테스트·REPL)에서만
 실행된다. Phase 7-2 가 `chat/graph/nodes/agent.py` 에서 같은 시그니처로 wrap.
@@ -25,12 +25,15 @@ from typing import Any, Mapping, Optional
 
 from chat.services.agent import tools as agent_tools
 from chat.services.agent.prompts import build_messages
-from chat.services.agent.result import AgentTermination, to_workflow_result
+from chat.services.agent.result import (
+    AgentResult,
+    AgentTermination,
+    to_agent_result,
+)
 from chat.services.agent.state import AgentState
 from chat.services.single_shot.llm import run_chat_completion
 from chat.services.single_shot.postprocess import record_token_usage
 from chat.services.single_shot.types import QueryPipelineError
-from chat.workflows.core import WorkflowResult
 
 
 logger = logging.getLogger(__name__)
@@ -58,14 +61,20 @@ def run_agent(
     history: list,
     *,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
-) -> WorkflowResult:
-    """ReAct loop 를 한 턴 돌려 `WorkflowResult` 반환."""
+) -> AgentResult:
+    """ReAct loop 를 한 턴 돌려 `AgentResult` 반환 (Phase 8-1).
+
+    Phase 7 까지는 `WorkflowResult` 반환이었음. 8-1 부터는 agent 가 자신의 의미
+    (sources / tool_calls / termination) 를 1급 필드로 표현하도록 `AgentResult`.
+    `WorkflowResult` 가 필요한 외부 호출자는 `result.to_workflow_result()` 어댑터.
+    """
     state = AgentState(question=(question or '').strip(), history=list(history or []))
 
     if not state.question:
-        return to_workflow_result(
+        return to_agent_result(
             AgentTermination.INSUFFICIENT_EVIDENCE,
             reason='질문이 비어 있습니다.',
+            state=state,
         )
 
     # JSON 파싱 retry 한 번 허용 — 같은 iteration 안에서.
@@ -76,16 +85,16 @@ def run_agent(
             messages = build_messages(state)
         except Exception as exc:                                      # noqa: BLE001
             logger.warning('agent 프롬프트 구성 실패: %s', exc)
-            return to_workflow_result(AgentTermination.FATAL_ERROR)
+            return to_agent_result(AgentTermination.FATAL_ERROR, state=state)
 
         try:
             raw, usage, model = run_chat_completion(messages)
         except QueryPipelineError as exc:
             logger.warning('agent LLM 호출 실패: %s', exc)
-            return to_workflow_result(AgentTermination.FATAL_ERROR)
+            return to_agent_result(AgentTermination.FATAL_ERROR, state=state)
         except Exception as exc:                                      # noqa: BLE001
             logger.warning('agent LLM 예기치 못한 오류: %s', exc)
-            return to_workflow_result(AgentTermination.FATAL_ERROR)
+            return to_agent_result(AgentTermination.FATAL_ERROR, state=state)
 
         if usage is not None and model:
             try:
@@ -98,15 +107,17 @@ def run_agent(
         if action is None:
             if parse_retry_budget > 0:
                 parse_retry_budget -= 1
+                # Phase 8-1: arguments={} — LLM 자체 step (도구 호출 의도 없음).
                 state.add_observation(
                     tool='_llm',
                     summary=f'invalid JSON, retrying once: {raw[:120]!r}',
                     is_failure=True,
+                    arguments={},
                 )
                 state.iteration_count += 1
                 continue
             logger.warning('agent JSON 파싱 실패 — 종료')
-            return to_workflow_result(AgentTermination.FATAL_ERROR)
+            return to_agent_result(AgentTermination.FATAL_ERROR, state=state)
 
         if action.get('action') == 'final_answer':
             answer = (action.get('answer') or '').strip()
@@ -117,14 +128,16 @@ def run_agent(
             )
             if not answer:
                 # final_answer 인데 answer 가 비어있으면 insufficient_evidence 로 종료.
-                return to_workflow_result(
+                return to_agent_result(
                     AgentTermination.INSUFFICIENT_EVIDENCE,
+                    state=state,
                 )
             state.final_answer = answer
             state.termination = AgentTermination.FINAL_ANSWER
-            return to_workflow_result(
+            return to_agent_result(
                 AgentTermination.FINAL_ANSWER,
                 value=answer,
+                state=state,
             )
 
         tool_name = action.get('action') or ''
@@ -136,11 +149,13 @@ def run_agent(
                 tool_name,
                 type(arguments).__name__,
             )
+            # Phase 8-1: arguments={} — non-Mapping 시도라 보존 불가, summary 에 형태 표시.
             state.add_observation(
                 tool=tool_name,
                 summary=f'arguments must be an object: got {type(arguments).__name__}',
                 is_failure=True,
                 failure_kind='invalid_args',           # Phase 7-4
+                arguments={},
             )
             state.iteration_count += 1
         elif state.repeated_call_count(tool_name, arguments) >= 1:
@@ -150,6 +165,7 @@ def run_agent(
                 'agent step %d: tool=%r 동일 호출 차단 (이전에 같은 인자로 호출됨)',
                 state.iteration_count, tool_name,
             )
+            # Phase 8-1: 차단된 시도 args 보존 — trace 에서 "어떤 args 로 반복하려 했나" 가시화.
             state.add_observation(
                 tool=tool_name,
                 summary=(
@@ -158,6 +174,7 @@ def run_agent(
                 ),
                 is_failure=True,
                 failure_kind='repeated_call',          # low_relevance 와 분리.
+                arguments=dict(arguments or {}),
             )
             state.iteration_count += 1
         else:
@@ -178,10 +195,12 @@ def run_agent(
         # 종료 조건 체크 (next iteration 들어가기 전에).
         termination = _decide_termination(state, max_iterations)
         if termination is not None:
-            return to_workflow_result(termination)
+            return to_agent_result(termination, state=state)
 
     # while 의 max_iterations 가드를 벗어난 경로 — 보통 위 while 조건이 먼저 잡지만 보험.
-    return to_workflow_result(AgentTermination.MAX_ITERATIONS_EXCEEDED)
+    return to_agent_result(
+        AgentTermination.MAX_ITERATIONS_EXCEEDED, state=state,
+    )
 
 
 # ---------------------------------------------------------------------------
