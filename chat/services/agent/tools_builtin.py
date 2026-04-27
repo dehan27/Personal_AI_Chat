@@ -33,6 +33,21 @@ _TOKEN_STRIP_CHARS = string.punctuation + '·、，。？！'
 # 한국어 1자 조사/어미/단일 stopword 제거. 영문은 'a', 'I' 등 단일 문자도 같은 이유로 컷.
 _KEYWORD_MIN_LEN = 2
 
+# Phase 7-4: relevance 마커 판정에서 제외할 일반 토큰. windowing 매치는 이 토큰도
+# 후보로 쓰지만 (자리 잡기에는 유용), 관련성 신호로는 부족 — 짧은 의문/비교/요청
+# 표현이 우연히 매치돼 false relevant 가 되는 회귀 차단용.
+_LOW_SIGNAL_TOKENS = frozenset({
+    # 비교/연산 의도
+    '비교', '차이', '차이점', '대비',
+    # 의문/요청
+    '얼마', '얼마나', '뭐야', '뭔가', '뭔가요', '어떤', '어떻게', '있나', '있나요',
+    '알려', '알려줘', '말해', '말해줘',
+    # 일반 지시
+    '관련', '대해', '대한',
+    # 영문 일반어
+    'compare', 'difference', 'about', 'what', 'how',
+})
+
 
 def _tokenize_query(query: str) -> List[str]:
     """Query 를 윈도우 매칭용 토큰으로 분리 (Phase 7-3).
@@ -59,6 +74,62 @@ def _tokenize_query(query: str) -> List[str]:
     return tokens
 
 
+def _earliest_match(content: str, query: str) -> int:
+    """**Windowing 용** 매치 위치. 모든 토큰 (low-signal 포함) 후보. 미매치 -1.
+
+    7-3 의 _focus_window 매치 정책 그대로 — 자리 잡기에 쓰이는 매치라 일반
+    토큰 ("비교") 도 위치 후보가 됨. 관련성 신호로는 약하지만 windowing 정확도는
+    유지. 관련성 마커 판정은 별도의 `_has_meaningful_match` 가 담당.
+    """
+    if not content or not query:
+        return -1
+    tokens = _tokenize_query(query)
+    if not tokens:
+        return -1
+    lower = content.lower()
+    for token in tokens:
+        idx = lower.find(token.lower())
+        if idx >= 0:
+            return idx
+    return -1
+
+
+def _has_meaningful_match(content: str, query: str) -> bool:
+    """**Relevance 마커 용** strict 판정 — 가장 긴 의미 토큰 (또는 동률 tier) 매치 요구 (Phase 7-4).
+
+    1) low-signal 토큰 (`비교`, `얼마` 등) 제외.
+    2) 남은 의미 토큰 중 **가장 긴 길이의 토큰들** (max_len 같으면 tier 전체) 만
+       매치 후보로 사용. 그 중 하나라도 청크에 있으면 True.
+
+    이게 더 느슨한 정책 ('의미 토큰 하나라도 매치') 보다 엄격한 이유는, 짧은
+    의미 토큰 (예: `비용`) 이 다른 도메인 청크에 우연히 들어있어도 정작 핵심
+    도메인 명사 (`우주여행`) 가 미매치면 False relevant 가 되어 무한 retrieve
+    회로가 남기 때문 (Phase 7-3 smoke 의 Defect 1 query 변형).
+
+    동률 max_len 토큰이 여러 개일 때는 그 중 하나라도 매치되면 True (`결혼 휴가`
+    처럼 둘 다 2자인 query 에서 한쪽만 청크에 있어도 인정).
+
+    알려진 한계: 동률 tier 중 하나가 일반 도메인 단어일 때 false relevant 발생
+    가능 (`우주여행 프로그램 비교` 의 `프로그램` 이 다른 도메인에 우연히 매치).
+    이 회귀는 Part 3 의 `MAX_LOW_RELEVANCE_RETRIEVES=3` 누적 가드가 보완.
+
+    query 가 모두 low-signal 이면 (예: '비교', '알려줘만') False — 정보량 부족.
+    """
+    if not content or not query:
+        return False
+    tokens = _tokenize_query(query)
+    meaningful = [t for t in tokens if t.lower() not in _LOW_SIGNAL_TOKENS]
+    if not meaningful:
+        return False
+    max_len = len(meaningful[0])  # tokens already sorted len desc
+    longest_tier = [t for t in meaningful if len(t) == max_len]
+    lower = content.lower()
+    for token in longest_tier:
+        if lower.find(token.lower()) >= 0:
+            return True
+    return False
+
+
 def _focus_window(content: str, query: str, *, length: int) -> str:
     """Query 키워드 매치 위치 주변 forward-bias 윈도우. 미매치면 첫 N자 fallback.
 
@@ -66,34 +137,15 @@ def _focus_window(content: str, query: str, *, length: int) -> str:
     length//4)` 의 자연 클램프 덕분에 매치가 청크 매우 앞 (`< length//4`) 이면
     자동으로 `start=0` → 첫 N자 출력 = 7-2 fallback 과 byte-identical.
 
-    의도적으로 `earliest < length` 강제 분기를 두지 않는다 — 그건 "키워드는
-    350자, 값은 450자" 같은 흔한 표 패턴에서 본 목적 (401자+ 답 노출) 을 깨뜨린다.
-    forward-bias 한 줄기로 처리하면 매치 위치별로 자연스럽게:
-        earliest < length//4   → start=0 (7-2 byte-identical)
-        length//4 ≤ earliest   → 매치 주변 ±윈도우 (7-3 의 본 가치)
+    Phase 7-4: 매치 위치 계산은 `_earliest_match` 로 추출 — 외부 시그니처 / 동작
+    변경 0 (7-3 단위 테스트 17건 그대로 통과).
     """
     if not content:
         return ''
     if len(content) <= length:
         return content
-    if not query:
-        return content[:length] + '…'
-
-    tokens = _tokenize_query(query)
-    if not tokens:
-        return content[:length] + '…'
-
-    # 긴 토큰부터 매치 — 정렬 덕분에 첫 매치 = 가장 긴 매치된 토큰의 위치.
-    lower = content.lower()
-    earliest = -1
-    for token in tokens:
-        idx = lower.find(token.lower())
-        if idx >= 0:
-            earliest = idx
-            break
-
+    earliest = _earliest_match(content, query)
     if earliest < 0:
-        # 미매치 — 청크 첫 N자 fallback (7-2 동작과 동일).
         return content[:length] + '…'
 
     # forward-bias: 앞 1/4 + 뒤 3/4. 표 행은 매치 위치 다음에 값/단위가 옴.
@@ -138,13 +190,15 @@ _RETRIEVE_SNIPPET_LEN = 400
 
 
 def _summarize_retrieve(result: Any) -> str:
-    """top N 청크의 출처 + query 키워드 주변 윈도우를 LLM 이 실제 답을 만들 수 있는
-    분량으로 노출 (Phase 7-3).
+    """top N 청크의 출처 + query 키워드 주변 윈도우 + 관련성 마커 (Phase 7-3 / 7-4).
 
-    Phase 7-1: 첫 청크 80자만 → "자료 찾지 못했음" 회귀.
-    Phase 7-2: top 3 청크 × 첫 400자. 답이 401자+ 위치에 있으면 못 봄.
-    Phase 7-3: top 3 청크 × query 매치 주변 ±400자 forward-bias 윈도우. 미매치
-        시 첫 400자 fallback (= 7-2 동작과 동일).
+    Phase 7-4 부터:
+    - hit 별로 `_has_meaningful_match` 가 False (longest meaningful token 미매치)
+      이면 출처 앞에 `[관련성 낮음] ` prefix.
+    - 모든 hit 가 미매치면 summary 머리에 `[query 핵심 토큰 매치 없음 — 관련 자료
+      부족 가능성]` 라인 추가.
+    LLM 이 무관 결과 / 핵심 토큰 부재를 가시적으로 보고 final_answer 로 종료할
+    수 있게.
 
     `result` 는 `_retrieve_callable` 이 만든 `{'query': ..., 'hits': [...]}` dict.
     """
@@ -154,11 +208,21 @@ def _summarize_retrieve(result: Any) -> str:
         return '검색 결과 없음 (0건)'
 
     parts = [f'{len(hits)}건 검색됨:']
+    meaningful_count = 0
     for idx, hit in enumerate(hits[:_RETRIEVE_TOP_N], start=1):
         name = getattr(hit, 'document_name', None) or '(출처 미상)'
         content = (getattr(hit, 'content', '') or '').replace('\n', ' ').strip()
         snippet = _focus_window(content, query, length=_RETRIEVE_SNIPPET_LEN)
-        parts.append(f'[{idx}] {name}: "{snippet}"')
+        relevant = _has_meaningful_match(content, query)
+        if relevant:
+            meaningful_count += 1
+        prefix = '' if relevant else '[관련성 낮음] '
+        parts.append(f'[{idx}] {prefix}{name}: "{snippet}"')
+
+    if meaningful_count == 0:
+        # 모든 hit 가 의미 토큰 미매치 — 머리에 강한 신호.
+        parts.insert(1, '[query 핵심 토큰 매치 없음 — 관련 자료 부족 가능성]')
+
     if len(hits) > _RETRIEVE_TOP_N:
         parts.append(f'(이하 {len(hits) - _RETRIEVE_TOP_N}건 생략)')
     return ' '.join(parts)
@@ -214,12 +278,30 @@ def _short_value(value: Any) -> str:
     return text if len(text) <= 80 else text[:79] + '…'
 
 
+def _retrieve_failure_check(result: Any) -> bool:
+    """retrieve_documents 가 진전 없음 신호 — 'low_relevance' failure_kind 카운터용 (Phase 7-4).
+
+    True 조건:
+    - 0건: "no useful evidence" — all-low-relevance 와 동일 의미로 통합.
+    - 모든 hit 가 `_has_meaningful_match=False`: longest meaningful token 미매치.
+
+    False (= success) 조건:
+    - 적어도 한 hit 가 의미 토큰 매치.
+    """
+    query = (result or {}).get('query') or ''
+    hits = (result or {}).get('hits') or []
+    if not hits:
+        return True
+    return not any(_has_meaningful_match(getattr(h, 'content', '') or '', query) for h in hits)
+
+
 # ---------------------------------------------------------------------------
 # 등록 — import 부작용
 # ---------------------------------------------------------------------------
 
 register(Tool(
     name='retrieve_documents',
+    failure_check=_retrieve_failure_check,            # Phase 7-4: low-relevance 자동 failure.
     description=(
         '회사 문서 청크를 하이브리드 + reranker 로 검색합니다. '
         'query 는 자유형 한국어/영어 검색어.'

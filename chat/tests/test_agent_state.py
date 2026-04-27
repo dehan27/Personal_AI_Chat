@@ -94,3 +94,55 @@ class AgentStateTests(SimpleTestCase):
             ),
             1,
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 7-4: Observation.failure_kind + low_relevance_retrieve_count
+# ---------------------------------------------------------------------------
+
+
+class ObservationFailureKindTests(SimpleTestCase):
+    """`Observation.failure_kind` — failure 종류 분리 (Phase 7-4)."""
+
+    def test_default_is_none(self):
+        obs = Observation(tool='t', summary='ok')
+        self.assertIsNone(obs.failure_kind)
+
+    def test_explicit_value_preserved(self):
+        obs = Observation(
+            tool='retrieve_documents', summary='no rel', is_failure=True,
+            failure_kind='low_relevance',
+        )
+        self.assertEqual(obs.failure_kind, 'low_relevance')
+
+
+class LowRelevanceRetrieveCountTests(SimpleTestCase):
+    """`AgentState.low_relevance_retrieve_count` — strict 카운트 (Phase 7-4).
+
+    P2-2 의 핵심: low_relevance 만 카운트, 다른 failure_kind / 다른 도구는 무시.
+    """
+
+    def _state(self):
+        return AgentState(question='Q', history=[])
+
+    def test_only_low_relevance_failures_counted(self):
+        s = self._state()
+        s.add_observation('retrieve_documents', 'no rel 1', is_failure=True, failure_kind='low_relevance')
+        s.add_observation('retrieve_documents', 'no rel 2', is_failure=True, failure_kind='low_relevance')
+        s.add_observation('retrieve_documents', 'no rel 3', is_failure=True, failure_kind='low_relevance')
+        self.assertEqual(s.low_relevance_retrieve_count(), 3)
+
+    def test_other_failure_kinds_are_ignored(self):
+        # callable_error / repeated_call / schema_invalid 등은 카운트 X.
+        s = self._state()
+        s.add_observation('retrieve_documents', 'cb err', is_failure=True, failure_kind='callable_error')
+        s.add_observation('retrieve_documents', 'repeat', is_failure=True, failure_kind='repeated_call')
+        s.add_observation('retrieve_documents', 'schema', is_failure=True, failure_kind='schema_invalid')
+        self.assertEqual(s.low_relevance_retrieve_count(), 0)
+
+    def test_other_tools_are_ignored(self):
+        # find_canonical_qa / run_workflow 의 failure 는 카운트 X.
+        s = self._state()
+        s.add_observation('find_canonical_qa', 'no rel', is_failure=True, failure_kind='low_relevance')
+        s.add_observation('run_workflow', 'no rel', is_failure=True, failure_kind='low_relevance')
+        self.assertEqual(s.low_relevance_retrieve_count(), 0)

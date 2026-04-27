@@ -13,7 +13,12 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from chat.services.agent import tools
-from chat.services.agent.tools_builtin import _focus_window, _tokenize_query
+from chat.services.agent.tools_builtin import (
+    _earliest_match,
+    _focus_window,
+    _has_meaningful_match,
+    _tokenize_query,
+)
 from chat.workflows.core import WorkflowResult
 
 
@@ -39,9 +44,11 @@ class BuiltinToolsRegistryTests(SimpleTestCase):
 
 class RetrieveDocumentsToolTests(SimpleTestCase):
     def test_delegates_to_single_shot_retrieval(self):
+        # Phase 7-4: query 의 longest meaningful token (`경조금` 3자) 이 청크에
+        # 있어야 is_failure=False — failure_check 정책상 의미 매치 필요.
         chunk = SimpleNamespace(
             document_name='경조사_규정.pdf',
-            content='본인 상 500만원 표가 있는 청크 본문',
+            content='본인 상 경조금 500만원 표가 있는 청크 본문',
         )
         with patch(
             'chat.services.agent.tools_builtin._retrieve',
@@ -54,12 +61,15 @@ class RetrieveDocumentsToolTests(SimpleTestCase):
         self.assertIn('경조사_규정.pdf', obs.summary)
 
     def test_zero_results_summary(self):
+        # Phase 7-4: 0건 retrieve 도 failure_check 가 True 반환 → is_failure=True,
+        # failure_kind='low_relevance' (no useful evidence 신호 통합).
         with patch(
             'chat.services.agent.tools_builtin._retrieve',
             return_value=[],
         ):
             obs = tools.call('retrieve_documents', {'query': '없는주제'})
-        self.assertFalse(obs.is_failure)
+        self.assertTrue(obs.is_failure)
+        self.assertEqual(obs.failure_kind, 'low_relevance')
         self.assertIn('0건', obs.summary)
 
     def test_summary_exposes_top_chunk_contents_for_llm(self):
@@ -403,3 +413,154 @@ class FocusWindowTests(SimpleTestCase):
         result = _focus_window(content, '결혼?', length=self.LENGTH)
         self.assertIn('결혼', result)
         self.assertTrue(result.startswith('…'))
+
+
+# ---------------------------------------------------------------------------
+# Phase 7-4: _earliest_match + _has_meaningful_match
+# ---------------------------------------------------------------------------
+
+
+class EarliestMatchTests(SimpleTestCase):
+    """`_earliest_match` — windowing 용 매치 위치. 모든 토큰 후보 (low-signal 포함)."""
+
+    def test_match_returns_position(self):
+        content = 'a' * 100 + '경조금' + 'b' * 100
+        self.assertEqual(_earliest_match(content, '경조금'), 100)
+
+    def test_no_match_returns_minus_one(self):
+        self.assertEqual(_earliest_match('a' * 200, '결혼'), -1)
+
+    def test_empty_inputs_return_minus_one(self):
+        self.assertEqual(_earliest_match('', '결혼'), -1)
+        self.assertEqual(_earliest_match('content', ''), -1)
+        self.assertEqual(_earliest_match('content', '가'), -1)  # all 1자 → tokens 0
+
+    def test_longer_token_matched_first(self):
+        # query 정렬: 경조금(3) > 비교(2). 경조금 위치가 우선 반환.
+        content = 'a' * 50 + '비교' + 'b' * 548 + '경조금' + 'c' * 397
+        self.assertEqual(_earliest_match(content, '비교 경조금'), 600)
+
+
+class HasMeaningfulMatchTests(SimpleTestCase):
+    """`_has_meaningful_match` — strict 정책 (longest meaningful token tier 매치 필요).
+
+    P2-1 의 핵심 회귀 가드: 짧은 의미 토큰만 매치되는 케이스 False.
+    """
+
+    def test_longest_meaningful_match_is_relevant(self):
+        # query "결혼 경조금 비교": meaningful=[경조금(3), 결혼(2)], longest=경조금.
+        content = 'a' * 100 + '경조금 50만원' + 'b' * 100
+        self.assertTrue(_has_meaningful_match(content, '결혼 경조금 비교'))
+
+    def test_only_short_meaningful_token_matched_returns_false(self):
+        # P2-1 핵심: query "우주여행 비용 비교" 의 longest=우주여행(4). "비용"(2자)
+        # 만 매치돼도 False — 무한 retrieve 회로 차단의 핵심.
+        content = '경조사 비용 항목 표' + 'a' * 200
+        self.assertFalse(_has_meaningful_match(content, '우주여행 비용 비교'))
+
+    def test_tied_max_len_either_match_returns_true(self):
+        # query "결혼 휴가": 둘 다 2자, longest_tier=[결혼, 휴가]. 한쪽만 매치돼도 OK.
+        content = '본인 결혼 시 5일' + 'a' * 100
+        self.assertTrue(_has_meaningful_match(content, '결혼 휴가'))
+        content2 = '자녀 휴가 신청' + 'a' * 100
+        self.assertTrue(_has_meaningful_match(content2, '결혼 휴가'))
+
+    def test_only_low_signal_token_matched_returns_false(self):
+        # query "결혼 비교" 의 meaningful=[결혼]. 청크에 "비교" 만 있으면 False
+        # ("비교" 는 low-signal 이라 meaningful 토큰에서 제외됨).
+        content = '경조사 항목 비교 표' + 'a' * 100
+        self.assertFalse(_has_meaningful_match(content, '결혼 비교'))
+
+    def test_empty_query_returns_false(self):
+        self.assertFalse(_has_meaningful_match('content', ''))
+
+    def test_all_low_signal_query_returns_false(self):
+        # query 자체가 모두 low-signal → 정보량 부족.
+        self.assertFalse(_has_meaningful_match('어떤 비교 자료', '비교 알려줘'))
+
+
+class RetrieveSummaryRelevanceMarkerTests(SimpleTestCase):
+    """`_summarize_retrieve` 의 [관련성 낮음] / 머리 마커 회귀 — Phase 7-4."""
+
+    def test_all_hits_meaningful_no_markers(self):
+        chunks = [
+            SimpleNamespace(document_name='복리후생.pdf', content='경조금 50만원 표'),
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '경조금'})
+        self.assertNotIn('[관련성 낮음]', obs.summary)
+        self.assertNotIn('[query 핵심 토큰 매치 없음', obs.summary)
+
+    def test_all_hits_low_signal_only_adds_head_and_per_chunk_markers(self):
+        # 모든 hit 가 longest meaningful 미매치 → 머리 + per-chunk 마커.
+        chunks = [
+            SimpleNamespace(document_name='무관.pdf', content='경조사 비용 항목'),
+            SimpleNamespace(document_name='무관2.pdf', content='다른 비용 표'),
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '우주여행 비용 비교'})
+        self.assertIn('[query 핵심 토큰 매치 없음', obs.summary)
+        # per-chunk 마커도 모두 부착.
+        self.assertEqual(obs.summary.count('[관련성 낮음]'), 2)
+
+    def test_partial_meaningful_match_per_chunk_marker_only(self):
+        # 일부 hit 만 의미 매치 → 미매치 청크에만 [관련성 낮음] / 머리 마커는 없음.
+        # query "결혼 휴가" 의 longest_tier=[결혼, 휴가] (둘 다 2자) — 한쪽만 매치돼도 True.
+        chunks = [
+            SimpleNamespace(document_name='경조사.pdf', content='본인 결혼 100만원'),
+            SimpleNamespace(document_name='무관.pdf', content='어제 회의록'),
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '결혼 휴가'})
+        self.assertNotIn('[query 핵심 토큰 매치 없음', obs.summary)
+        # 미매치 청크 한 개에만 마커.
+        self.assertEqual(obs.summary.count('[관련성 낮음]'), 1)
+
+
+class RetrieveFailureCheckTests(SimpleTestCase):
+    """`_retrieve_failure_check` 회귀 — Phase 7-4 (failure_kind='low_relevance' 마킹)."""
+
+    def test_all_low_relevance_returns_is_failure(self):
+        chunks = [
+            SimpleNamespace(document_name='무관.pdf', content='어제 회의록')
+            for _ in range(2)
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '우주여행 비용 비교'})
+        self.assertTrue(obs.is_failure)
+        self.assertEqual(obs.failure_kind, 'low_relevance')
+
+    def test_partial_meaningful_returns_success(self):
+        chunks = [
+            SimpleNamespace(document_name='경조사.pdf', content='본인 결혼 100만원'),
+            SimpleNamespace(document_name='무관.pdf', content='어제 회의록'),
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '결혼 휴가'})
+        self.assertFalse(obs.is_failure)
+        self.assertIsNone(obs.failure_kind)
+
+    def test_zero_hit_treated_as_low_relevance(self):
+        # P3: 0건도 failure_kind='low_relevance' 로 처리.
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=[],
+        ):
+            obs = tools.call('retrieve_documents', {'query': '뭐든'})
+        self.assertTrue(obs.is_failure)
+        self.assertEqual(obs.failure_kind, 'low_relevance')

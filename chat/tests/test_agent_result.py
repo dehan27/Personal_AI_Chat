@@ -17,12 +17,15 @@ class ToWorkflowResultTests(SimpleTestCase):
         self.assertEqual(r.value, '42')
         self.assertEqual(r.details['termination'], 'final_answer')
 
-    def test_max_iterations_maps_to_upstream_error(self):
+    def test_max_iterations_maps_to_not_found(self):
+        # Phase 7-4: max_iter 도달은 "정리 못 함" 의미라 NOT_FOUND 가 맞음
+        # (이전 UPSTREAM_ERROR 에서 변경 — broad query 시 재시도 무의미).
         r = to_workflow_result(AgentTermination.MAX_ITERATIONS_EXCEEDED)
-        self.assertEqual(r.status, WorkflowStatus.UPSTREAM_ERROR)
-        self.assertIn('잠시 후 다시', r.details['reason'])
+        self.assertEqual(r.status, WorkflowStatus.NOT_FOUND)
+        self.assertIn('더 구체적인 질문', r.details['reason'])
 
     def test_fatal_error_maps_to_upstream_error(self):
+        # FATAL_ERROR (LLM/네트워크 일시 오류) 만 진짜 UPSTREAM_ERROR.
         r = to_workflow_result(AgentTermination.FATAL_ERROR)
         self.assertEqual(r.status, WorkflowStatus.UPSTREAM_ERROR)
         self.assertIn('일시적인 오류', r.details['reason'])

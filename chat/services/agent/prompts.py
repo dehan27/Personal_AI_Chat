@@ -27,6 +27,11 @@ SYSTEM_PROMPT_PATH = 'chat/agent_react.md'
 # 컨텍스트 비용 ↑ + 모델이 과거 정보에 끌려간다.
 MAX_RECENT_OBSERVATIONS = 6
 
+# Phase 7-4: LLM 이 핑퐁 패턴을 가시적으로 보고 회피할 수 있도록 직전 K 개 호출을
+# 노출. K=5 면 max_iter=6 의 거의 전체 history. dict args 라 줄당 50~100자, 5줄
+# 합쳐도 토큰 비용 무시 가능.
+MAX_RECENT_TOOL_CALLS = 5
+
 
 def build_messages(state: AgentState) -> list[dict[str, str]]:
     """system + user 메시지 두 개를 만들어 chat.completions 에 그대로 넘길 수 있게 반환."""
@@ -53,12 +58,20 @@ def _format_user_payload(state: AgentState) -> str:
             sections.append(_format_observation(obs))
         sections.append('')
 
+    # Phase 7-4: 직전 K=5 개 호출을 모두 노출 — LLM 이 핑퐁 / 동일 args 반복을
+    # 가시적으로 인지하고 회피하도록.
     if state.tool_calls:
-        last_call = state.tool_calls[-1]
+        recent_calls = state.tool_calls[-MAX_RECENT_TOOL_CALLS:]
+        sections.append(f'Recent tool calls (last {len(recent_calls)}):')
+        for idx, call in enumerate(recent_calls, start=1):
+            args_json = json.dumps(dict(call.arguments), ensure_ascii=False)
+            sections.append(f'  {idx}. {call.name}({args_json})')
         sections.append(
-            f'Last tool call: {last_call.name}('
-            f'{json.dumps(dict(last_call.arguments), ensure_ascii=False)})'
+            'Do NOT repeat any of the above (tool, arguments) combinations.'
         )
+        sections.append('')
+    else:
+        sections.append('Recent tool calls (none yet).')
         sections.append('')
 
     sections.append(

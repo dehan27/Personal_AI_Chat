@@ -34,15 +34,22 @@ class AgentTermination(str, Enum):
 
 # 내부 종료 사유 → 사용자-facing WorkflowResult 변환 표.
 # `OK / NOT_FOUND / UPSTREAM_ERROR` 만 사용. UNSUPPORTED 는 agent 가 만들지 않음.
+#
+# Phase 7-4 smoke 보강:
+# - MAX_ITERATIONS_EXCEEDED → NOT_FOUND 매핑 (이전 UPSTREAM_ERROR 에서 변경).
+#   "잠시 후 다시 시도" 가 의미상 부정확 — broad query 로 6 step 다 채운 케이스는
+#   재시도해도 같은 결과. "정리 못 함" = NOT_FOUND 가 맞음. 카피도 "더 구체적인
+#   질문" 안내로.
+# - NO_MORE_USEFUL_TOOLS / INSUFFICIENT_EVIDENCE 카피를 "다시 물어봐" 톤으로 통일.
 _DEFAULT_REASONS = {
     AgentTermination.MAX_ITERATIONS_EXCEEDED: (
-        '도구를 너무 많이 사용했어요. 잠시 후 다시 시도해 주세요.'
+        '충분한 답을 만들지 못했습니다. 더 구체적인 질문으로 다시 물어봐 주세요.'
     ),
     AgentTermination.NO_MORE_USEFUL_TOOLS: (
-        '더 알아볼 도구가 남지 않아 충분한 답을 만들 수 없었습니다.'
+        '질문에 맞는 자료를 찾을 수 없었습니다. 질문을 다시 한 번 확인해 주세요.'
     ),
     AgentTermination.INSUFFICIENT_EVIDENCE: (
-        '근거가 부족해 답을 만들기 어려웠습니다. 자료가 충분한지 확인해 주세요.'
+        '관련 자료를 충분히 확인하지 못했습니다. 질문을 다시 한 번 확인해 주세요.'
     ),
     AgentTermination.FATAL_ERROR: (
         '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
@@ -58,8 +65,12 @@ def to_workflow_result(
 ) -> WorkflowResult:
     """`AgentTermination` 을 `WorkflowResult` 로 변환.
 
+    Phase 7-4 매핑:
     - `FINAL_ANSWER` → `WorkflowResult.ok(value=<answer>, ...)`.
-    - `MAX_ITERATIONS_EXCEEDED` / `FATAL_ERROR` → `WorkflowResult.upstream_error(...)`.
+    - `MAX_ITERATIONS_EXCEEDED` → `WorkflowResult.not_found(...)`. (이전 UPSTREAM_ERROR
+      에서 변경 — "잠시 후 재시도" 가 broad query 시나리오에 부정확.)
+    - `FATAL_ERROR` → `WorkflowResult.upstream_error(...)`. LLM/네트워크 일시 오류
+      만 진짜 재시도 권장.
     - `NO_MORE_USEFUL_TOOLS` / `INSUFFICIENT_EVIDENCE` → `WorkflowResult.not_found(...)`.
 
     `reason` 이 비어있으면 `_DEFAULT_REASONS` 의 한국어 카피가 사용된다.
@@ -76,16 +87,16 @@ def to_workflow_result(
         )
 
     effective_reason = reason or _DEFAULT_REASONS.get(termination, '')
-    if termination in (
-        AgentTermination.MAX_ITERATIONS_EXCEEDED,
-        AgentTermination.FATAL_ERROR,
-    ):
+    if termination == AgentTermination.FATAL_ERROR:
+        # 진짜 일시적 오류만 UPSTREAM_ERROR ("잠시 후 다시 시도" 적합).
         return WorkflowResult.upstream_error(effective_reason)
 
     if termination in (
+        AgentTermination.MAX_ITERATIONS_EXCEEDED,
         AgentTermination.NO_MORE_USEFUL_TOOLS,
         AgentTermination.INSUFFICIENT_EVIDENCE,
     ):
+        # max_iter 도달도 "정리 못 함" = NOT_FOUND. 재시도해도 같은 결과.
         return WorkflowResult.not_found(effective_reason)
 
     raise ValueError(f'to_workflow_result: 알 수 없는 termination: {termination!r}')
