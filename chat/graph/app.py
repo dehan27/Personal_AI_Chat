@@ -8,13 +8,15 @@ node 구성이 바뀌어도 이 함수의 시그니처·반환·예외는 고정
                         single_shot → END
                         workflow   → END   (Phase 6-1 부터; 내부에서 dispatch 또는
                                               single_shot fallback)
-                        agent      → single_shot → END   (Phase 7 대기)
+                        agent      → END   (Phase 7-2 부터; agent_node 가 ReAct
+                                              loop 를 돌리고 결과를 reply 로 변환)
 """
 
 from functools import lru_cache
 
 from langgraph.graph import END, START, StateGraph
 
+from chat.graph.nodes.agent import agent_node
 from chat.graph.nodes.router import router_node
 from chat.graph.nodes.single_shot import single_shot_node
 from chat.graph.nodes.workflow import workflow_node
@@ -30,6 +32,7 @@ def _compiled_graph():
     builder.add_node('router', router_node)
     builder.add_node('single_shot', single_shot_node)
     builder.add_node('workflow', workflow_node)
+    builder.add_node('agent', agent_node)
 
     builder.add_edge(START, 'router')
     builder.add_conditional_edges(
@@ -42,12 +45,14 @@ def _compiled_graph():
             # workflow_key 가 비었거나 미등록이면 single_shot 으로 폴백하므로
             # 기존 Phase 4-1 동작과 회귀 0.
             ROUTE_WORKFLOW: 'workflow',
-            # Phase 7 이전: agent 는 여전히 single_shot 포워딩.
-            ROUTE_AGENT: 'single_shot',
+            # Phase 7-2: agent route 는 agent_node 로. 내부에서 history-aware
+            # rewrite → run_agent → reply 로 흐른다.
+            ROUTE_AGENT: 'agent',
         },
     )
     builder.add_edge('single_shot', END)
     builder.add_edge('workflow', END)
+    builder.add_edge('agent', END)
 
     return builder.compile()
 

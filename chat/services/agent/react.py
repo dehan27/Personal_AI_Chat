@@ -1,6 +1,6 @@
-"""ReAct loop runtime (Phase 7-1).
+"""ReAct loop runtime (Phase 7-1; Phase 7-2 smoke 후 max_iterations 6 으로 상향).
 
-`run_agent(question, history, *, max_iterations=4) -> WorkflowResult` 가
+`run_agent(question, history, *, max_iterations=6) -> WorkflowResult` 가
 유일한 외부 진입점. 한 iteration 흐름:
 
     1. `prompts.build_messages(state)` → system + user 메시지.
@@ -37,7 +37,12 @@ logger = logging.getLogger(__name__)
 
 
 # 안전판
-DEFAULT_MAX_ITERATIONS = 4
+# Phase 7-1 은 4 로 시작했으나 7-2 smoke 검증에서 비교형 질문(retrieve A + retrieve
+# B + final_answer) 패턴에 부족하다는 게 드러남 — 자료를 다 모으고도 final_answer
+# 까지 못 가서 MAX_ITERATIONS_EXCEEDED 가 떨어졌음. 6 으로 상향해 retrieve 두 번 +
+# 보조 검색 한 번 + final 까지 여유롭게 도달 가능하게 한다. 한 턴 LLM 호출은 최악
+# rewriter 1 + agent step 7 = 8 회.
+DEFAULT_MAX_ITERATIONS = 6
 MAX_CONSECUTIVE_FAILURES = 3
 MAX_REPEATED_CALL = 3
 
@@ -99,6 +104,11 @@ def run_agent(
 
         if action.get('action') == 'final_answer':
             answer = (action.get('answer') or '').strip()
+            logger.info(
+                'agent step %d: final_answer (answer_len=%d)',
+                state.iteration_count,
+                len(answer),
+            )
             if not answer:
                 # final_answer 인데 answer 가 비어있으면 insufficient_evidence 로 종료.
                 return to_workflow_result(
@@ -114,6 +124,12 @@ def run_agent(
         tool_name = action.get('action') or ''
         arguments = action.get('arguments') or {}
         if not isinstance(arguments, Mapping):
+            logger.info(
+                'agent step %d: tool=%r 인자 형식 오류 (got %s)',
+                state.iteration_count,
+                tool_name,
+                type(arguments).__name__,
+            )
             state.add_observation(
                 tool=tool_name,
                 summary=f'arguments must be an object: got {type(arguments).__name__}',
@@ -123,6 +139,14 @@ def run_agent(
         else:
             state.record_tool_call(tool_name, arguments)
             obs = agent_tools.call(tool_name, arguments)
+            logger.info(
+                'agent step %d: tool=%r args=%r → is_failure=%s summary=%r',
+                state.iteration_count,
+                tool_name,
+                dict(arguments),
+                obs.is_failure,
+                obs.summary[:120],
+            )
             state.observations.append(obs)
             state.iteration_count += 1
 

@@ -58,6 +58,62 @@ class RetrieveDocumentsToolTests(SimpleTestCase):
         self.assertFalse(obs.is_failure)
         self.assertIn('0건', obs.summary)
 
+    def test_summary_exposes_top_chunk_contents_for_llm(self):
+        """7-2 smoke 회귀: 첫 청크 80자만 노출하면 LLM 이 비교 답변을 못 만든다."""
+        chunks = [
+            SimpleNamespace(
+                document_name='복리후생.pdf',
+                content='본인 결혼 100만원 자녀 결혼 50만원 형제 결혼 30만원 ' * 2,
+            ),
+            SimpleNamespace(
+                document_name='취업규칙.pdf',
+                content='유급 휴가 본인 결혼 5일 자녀 결혼 1일',
+            ),
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '결혼 경조금'})
+        # 두 청크의 출처가 모두 노출돼야 비교가 가능.
+        self.assertIn('복리후생.pdf', obs.summary)
+        self.assertIn('취업규칙.pdf', obs.summary)
+        # 실제 값(100만원, 50만원, 5일)이 요약에 들어가야 LLM 이 답을 만든다.
+        self.assertIn('100만원', obs.summary)
+        self.assertIn('50만원', obs.summary)
+        self.assertIn('5일', obs.summary)
+        # 컨텍스트 폭주 방지 — observation 1500자 캡 안 (Phase 7-2 smoke 후 상향).
+        self.assertLessEqual(len(obs.summary), 1500)
+
+    def test_summary_truncates_top_chunks_per_chunk_limit(self):
+        long_content = '본인 결혼 ' + ('가' * 500)
+        chunks = [
+            SimpleNamespace(document_name='a.pdf', content=long_content)
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': 'q'})
+        # 청크 본문이 길면 잘려 '…' 표시.
+        self.assertIn('…', obs.summary)
+
+    def test_summary_caps_at_top_n_chunks(self):
+        many = [
+            SimpleNamespace(document_name=f'doc{i}.pdf', content=f'내용{i}')
+            for i in range(7)
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=many,
+        ):
+            obs = tools.call('retrieve_documents', {'query': 'q'})
+        # 처음 3개는 노출, 나머지는 '이하 N건 생략' 으로 요약.
+        self.assertIn('doc0.pdf', obs.summary)
+        self.assertIn('doc2.pdf', obs.summary)
+        self.assertIn('이하 4건 생략', obs.summary)
+        self.assertNotIn('doc6.pdf', obs.summary)
+
 
 class FindCanonicalQAToolTests(SimpleTestCase):
     def test_delegates_to_qa_cache(self):

@@ -94,11 +94,10 @@ class RunAgentTests(SimpleTestCase):
 
     def test_max_iterations_exceeded_returns_upstream_error(self):
         # max_iterations 만큼 도구만 부르고 final_answer 를 안 내면 종료.
+        # 인자를 모두 다르게 줘서 MAX_REPEATED_CALL 가드가 먼저 걸리지 않게 한다.
         replies = [
-            '{"thought": "또 검색", "action": "dummy", "arguments": {"query": "q1"}}',
-            '{"thought": "또 검색", "action": "dummy", "arguments": {"query": "q2"}}',
-            '{"thought": "또 검색", "action": "dummy", "arguments": {"query": "q3"}}',
-            '{"thought": "또 검색", "action": "dummy", "arguments": {"query": "q4"}}',
+            f'{{"thought": "또 검색", "action": "dummy", "arguments": {{"query": "q{i}"}}}}'
+            for i in range(DEFAULT_MAX_ITERATIONS)
         ]
         with self._patch_prompt(), self._patch_record(), self._patch(replies):
             r = react.run_agent('Q', history=[], max_iterations=DEFAULT_MAX_ITERATIONS)

@@ -23,7 +23,13 @@ from chat.services.agent.result import AgentTermination
 
 # 한 Observation 의 요약 길이 상한. 너무 길면 다음 iteration 의 LLM 컨텍스트가
 # 잠식되므로 자른다 — 끝에 '…' 를 붙여 잘림을 표시.
-MAX_OBSERVATION_SUMMARY_CHARS = 600
+#
+# Phase 7-1 은 600 으로 시작했으나 7-2 smoke 에서 retrieve_documents 의 청크 본문이
+# 너무 강하게 잘려 LLM 이 데이터를 손에 쥐고도 답을 못 만드는 회귀가 발견됨.
+# 1500 으로 늘려도 한 턴 최대 ≈ 6 step × 1500 = 9000자 — gpt-4o-mini 128k 한도에
+# 여유. 근본적으로는 retrieve 결과를 workspace 에 두고 read_chunk 도구로 LLM 이
+# 필요한 부분만 fetch 하는 구조가 옳지만 그건 후속 Phase 책임.
+MAX_OBSERVATION_SUMMARY_CHARS = 1500
 
 
 @dataclass(frozen=True)
