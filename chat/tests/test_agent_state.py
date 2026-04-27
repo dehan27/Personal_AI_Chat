@@ -146,3 +146,43 @@ class LowRelevanceRetrieveCountTests(SimpleTestCase):
         s.add_observation('find_canonical_qa', 'no rel', is_failure=True, failure_kind='low_relevance')
         s.add_observation('run_workflow', 'no rel', is_failure=True, failure_kind='low_relevance')
         self.assertEqual(s.low_relevance_retrieve_count(), 0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 8-1: Observation.arguments / evidence 필드 + add_observation kwarg
+# ---------------------------------------------------------------------------
+
+
+class ObservationArgumentsEvidenceTests(SimpleTestCase):
+    """Phase 8-1: Observation.arguments / evidence default + 명시 값 보존."""
+
+    def test_arguments_default_is_empty_dict(self):
+        obs = Observation(tool='t', summary='ok')
+        self.assertEqual(dict(obs.arguments), {})
+
+    def test_arguments_explicit_value_preserved(self):
+        obs = Observation(
+            tool='retrieve_documents', summary='3건',
+            arguments={'query': '경조사'},
+        )
+        self.assertEqual(dict(obs.arguments), {'query': '경조사'})
+
+    def test_evidence_default_is_empty_tuple(self):
+        obs = Observation(tool='t', summary='ok')
+        self.assertEqual(obs.evidence, ())
+
+
+class AddObservationKwargTests(SimpleTestCase):
+    """Phase 8-1: state.add_observation 가 arguments / evidence kwarg 받음."""
+
+    def test_add_observation_with_arguments_and_evidence(self):
+        from chat.services.agent.result import SourceRef
+        s = AgentState(question='Q', history=[])
+        ref = SourceRef(name='a.pdf', url='/media/a')
+        obs = s.add_observation(
+            'retrieve_documents', '결과',
+            arguments={'query': '경조사'},
+            evidence=(ref,),
+        )
+        self.assertEqual(dict(obs.arguments), {'query': '경조사'})
+        self.assertEqual(obs.evidence, (ref,))
