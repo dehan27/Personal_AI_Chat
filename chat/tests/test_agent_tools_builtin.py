@@ -118,6 +118,70 @@ class RetrieveDocumentsToolTests(SimpleTestCase):
         self.assertIn('이하 4건 생략', obs.summary)
         self.assertNotIn('doc6.pdf', obs.summary)
 
+    # ---------- Phase 7-3: query-focused windowing 회귀 ----------
+
+    def test_summary_exposes_value_past_first_400_chars_when_keyword_in_window(self):
+        """7-3 본 목적: 답이 401자+ 위치에 있을 때 windowing 으로 노출."""
+        # 청크: 0~599자 채움, 600~602자 키워드 '경조금', 603~607자 값 '[VAL]', ...
+        content = (
+            'a' * 600
+            + '경조금'
+            + '[VAL]'
+            + 'b' * 392
+        )
+        chunks = [SimpleNamespace(document_name='복리후생.pdf', content=content)]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '결혼 경조금'})
+        # 7-2 fallback (첫 400자) 으론 '[VAL]' 이 안 나왔지만, 7-3 windowing 으론 나옴.
+        self.assertIn('[VAL]', obs.summary)
+        self.assertIn('경조금', obs.summary)
+
+    def test_summary_falls_back_to_first_n_when_keyword_not_found(self):
+        """미매치 시 7-2 와 byte-identical fallback."""
+        content = 'a' * 1000
+        chunks = [SimpleNamespace(document_name='무관.pdf', content=content)]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '결혼 경조금'})
+        # 첫 400자 + '…' 이 summary 안에 들어가야 함.
+        self.assertIn('a' * 400 + '…', obs.summary)
+
+    def test_summary_matches_korean_keyword_inside_chunk(self):
+        """한국어 키워드가 청크 안쪽 (length 너머) 에서 매치돼 윈도우가 이동."""
+        content = 'b' * 500 + '본인 결혼 100만원' + 'c' * 480
+        chunks = [SimpleNamespace(document_name='복리후생.pdf', content=content)]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '본인 결혼'})
+        self.assertIn('100만원', obs.summary)
+
+    def test_summary_uses_longer_token_position_over_earlier_short_match(self):
+        """P2-3 회귀 가드: 짧은 토큰이 청크 앞부분에 있어도 긴 토큰 위치가 윈도우 중심."""
+        content = (
+            'b' * 50
+            + '비교'         # 짧은 토큰, 50자 위치
+            + 'c' * 548
+            + '경조금'        # 긴 토큰, 600자 위치
+            + '[VAL]'        # 603자
+            + 'd' * 392
+        )
+        chunks = [SimpleNamespace(document_name='복리후생.pdf', content=content)]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '비교 결혼 경조금'})
+        # '경조금' 위치 윈도우라 [VAL] 이 들어와야 한다 (짧은 토큰 '비교' 위치였다면 못 봄).
+        self.assertIn('[VAL]', obs.summary)
+        self.assertIn('경조금', obs.summary)
+
 
 class FindCanonicalQAToolTests(SimpleTestCase):
     def test_delegates_to_qa_cache(self):

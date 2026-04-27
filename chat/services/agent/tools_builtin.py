@@ -113,27 +113,43 @@ def _focus_window(content: str, query: str, *, length: int) -> str:
 # retrieve_documents
 # ---------------------------------------------------------------------------
 
-def _retrieve_callable(arguments: Mapping[str, Any]) -> list:
-    return _retrieve(arguments['query'])
+def _retrieve_callable(arguments: Mapping[str, Any]) -> dict:
+    """retrieve_documents tool callable.
+
+    Phase 7-3 부터 반환을 `{'query': ..., 'hits': [...]}` dict 로 감싼다 — query
+    를 `_summarize_retrieve` 까지 흘려 keyword-aware windowing 을 가능하게 하기
+    위한 우회. `Tool.summarize: Callable[[Any], str]` 시그니처는 그대로 둬서 다른
+    도구 / 외부 코드 영향 없음. 이 dict 는 `tools.call` 내부에서 summarize 직전에만
+    보이고, 외부에 노출되는 건 `Observation.summary` 문자열 뿐이라 외부 계약 변경 0.
+    """
+    query = arguments['query']
+    return {
+        'query': query,
+        'hits': _retrieve(query),
+    }
 
 
 _RETRIEVE_TOP_N = 3
 # Phase 7-2 smoke: 180자는 표 헤더 정도밖에 못 담아 LLM 이 본문을 못 봄. 400자면
-# 표 4~6 행 / 두세 단락이 들어가 비교형 질문에 답을 만들 수 있다. 임의 cap 인 건
-# 변함없으므로 프롬프트에 "스니펫에 값 없으면 query 다듬어 다시 retrieve" 도
-# 같이 명시 — ReAct loop 의 본래 의도대로 LLM 이 보강 검색을 하도록.
+# 표 4~6 행 / 두세 단락이 들어가 비교형 질문에 답을 만들 수 있다. Phase 7-3 부터는
+# 이 400자가 청크 첫 N자가 아니라 query 키워드 매치 위치 주변의 윈도우 길이 — 즉
+# 위치는 가변, 길이만 고정.
 _RETRIEVE_SNIPPET_LEN = 400
 
 
-def _summarize_retrieve(hits: Any) -> str:
-    """top N 청크의 출처 + 본문 일부를 LLM 이 실제로 답을 만들 수 있는 분량으로 노출.
+def _summarize_retrieve(result: Any) -> str:
+    """top N 청크의 출처 + query 키워드 주변 윈도우를 LLM 이 실제 답을 만들 수 있는
+    분량으로 노출 (Phase 7-3).
 
-    Phase 7-1 초기에는 첫 청크 80자만 노출했더니 "비교" 류 질문에서 데이터를
-    찾아놓고도 LLM 이 표 값을 못 봐서 "자료를 찾지 못했습니다" 로 종결되는 회귀가
-    났음 (Phase 7-2 smoke). top 3 청크 * ~180자 = 약 540자로 늘려 LLM 이 본문을
-    보고 비교/요약을 할 수 있도록 한다. 총 길이는 `MAX_OBSERVATION_SUMMARY_CHARS`
-    (600) 한도 안.
+    Phase 7-1: 첫 청크 80자만 → "자료 찾지 못했음" 회귀.
+    Phase 7-2: top 3 청크 × 첫 400자. 답이 401자+ 위치에 있으면 못 봄.
+    Phase 7-3: top 3 청크 × query 매치 주변 ±400자 forward-bias 윈도우. 미매치
+        시 첫 400자 fallback (= 7-2 동작과 동일).
+
+    `result` 는 `_retrieve_callable` 이 만든 `{'query': ..., 'hits': [...]}` dict.
     """
+    query = (result or {}).get('query') or ''
+    hits = (result or {}).get('hits') or []
     if not hits:
         return '검색 결과 없음 (0건)'
 
@@ -141,9 +157,7 @@ def _summarize_retrieve(hits: Any) -> str:
     for idx, hit in enumerate(hits[:_RETRIEVE_TOP_N], start=1):
         name = getattr(hit, 'document_name', None) or '(출처 미상)'
         content = (getattr(hit, 'content', '') or '').replace('\n', ' ').strip()
-        snippet = content[:_RETRIEVE_SNIPPET_LEN]
-        if len(content) > _RETRIEVE_SNIPPET_LEN:
-            snippet += '…'
+        snippet = _focus_window(content, query, length=_RETRIEVE_SNIPPET_LEN)
         parts.append(f'[{idx}] {name}: "{snippet}"')
     if len(hits) > _RETRIEVE_TOP_N:
         parts.append(f'(이하 {len(hits) - _RETRIEVE_TOP_N}건 생략)')
