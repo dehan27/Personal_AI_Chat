@@ -41,10 +41,18 @@ class ToolCall:
 
 @dataclass(frozen=True)
 class Observation:
-    """tool 호출 결과 요약. 원문이 아니라 LLM 이 다시 보기 좋은 짧은 문장이다."""
+    """tool 호출 결과 요약. 원문이 아니라 LLM 이 다시 보기 좋은 짧은 문장이다.
+
+    Phase 7-4: `failure_kind` — failure 의 원인 종류. 'low_relevance' /
+    'repeated_call' / 'callable_error' / 'schema_invalid' / 'unknown_tool' /
+    'invalid_args' 또는 None. low_relevance 만 누적 가드 (`MAX_LOW_RELEVANCE_RETRIEVES`)
+    가 카운트 — 자료 없음과 실행 오류 분리. summarize 예외는 7-1 정책 그대로
+    is_failure=False 로 흡수, failure_kind 도 None 유지 (본 Phase 범위 밖).
+    """
     tool: str
     summary: str
     is_failure: bool = False
+    failure_kind: Optional[str] = None
 
     def __post_init__(self) -> None:
         # frozen dataclass 라 __setattr__ 우회. summary 길이는 직접 만든 객체에 한해
@@ -82,9 +90,16 @@ class AgentState:
         summary: str,
         *,
         is_failure: bool = False,
+        failure_kind: Optional[str] = None,
     ) -> Observation:
-        """Observation 을 만들어 append + 반환. 호출부가 길이 자르기 신경 안 쓰게."""
-        obs = Observation(tool=tool, summary=summary, is_failure=is_failure)
+        """Observation 을 만들어 append + 반환. 호출부가 길이 자르기 신경 안 쓰게.
+
+        Phase 7-4: `failure_kind` 로 failure 종류 명시 (자료 없음 / 실행 오류 분리).
+        """
+        obs = Observation(
+            tool=tool, summary=summary,
+            is_failure=is_failure, failure_kind=failure_kind,
+        )
         self.observations.append(obs)
         return obs
 
@@ -114,3 +129,16 @@ class AgentState:
             if key == target:
                 count += 1
         return count
+
+    def low_relevance_retrieve_count(self) -> int:
+        """retrieve_documents 의 'low_relevance' failure 만 누적 카운트 (Phase 7-4).
+
+        다른 failure 종류 (callable_error / schema_invalid / repeated_call 등) 는
+        제외 — "자료 없음" 신호와 "실행 오류" 신호가 섞이지 않게.
+        `MAX_LOW_RELEVANCE_RETRIEVES` 누적 가드의 카운터.
+        """
+        return sum(
+            1 for obs in self.observations
+            if obs.tool == 'retrieve_documents'
+            and obs.failure_kind == 'low_relevance'
+        )

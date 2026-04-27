@@ -44,9 +44,11 @@ class BuiltinToolsRegistryTests(SimpleTestCase):
 
 class RetrieveDocumentsToolTests(SimpleTestCase):
     def test_delegates_to_single_shot_retrieval(self):
+        # Phase 7-4: query 의 longest meaningful token (`경조금` 3자) 이 청크에
+        # 있어야 is_failure=False — failure_check 정책상 의미 매치 필요.
         chunk = SimpleNamespace(
             document_name='경조사_규정.pdf',
-            content='본인 상 500만원 표가 있는 청크 본문',
+            content='본인 상 경조금 500만원 표가 있는 청크 본문',
         )
         with patch(
             'chat.services.agent.tools_builtin._retrieve',
@@ -59,12 +61,15 @@ class RetrieveDocumentsToolTests(SimpleTestCase):
         self.assertIn('경조사_규정.pdf', obs.summary)
 
     def test_zero_results_summary(self):
+        # Phase 7-4: 0건 retrieve 도 failure_check 가 True 반환 → is_failure=True,
+        # failure_kind='low_relevance' (no useful evidence 신호 통합).
         with patch(
             'chat.services.agent.tools_builtin._retrieve',
             return_value=[],
         ):
             obs = tools.call('retrieve_documents', {'query': '없는주제'})
-        self.assertFalse(obs.is_failure)
+        self.assertTrue(obs.is_failure)
+        self.assertEqual(obs.failure_kind, 'low_relevance')
         self.assertIn('0건', obs.summary)
 
     def test_summary_exposes_top_chunk_contents_for_llm(self):
@@ -519,3 +524,43 @@ class RetrieveSummaryRelevanceMarkerTests(SimpleTestCase):
         self.assertNotIn('[query 핵심 토큰 매치 없음', obs.summary)
         # 미매치 청크 한 개에만 마커.
         self.assertEqual(obs.summary.count('[관련성 낮음]'), 1)
+
+
+class RetrieveFailureCheckTests(SimpleTestCase):
+    """`_retrieve_failure_check` 회귀 — Phase 7-4 (failure_kind='low_relevance' 마킹)."""
+
+    def test_all_low_relevance_returns_is_failure(self):
+        chunks = [
+            SimpleNamespace(document_name='무관.pdf', content='어제 회의록')
+            for _ in range(2)
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '우주여행 비용 비교'})
+        self.assertTrue(obs.is_failure)
+        self.assertEqual(obs.failure_kind, 'low_relevance')
+
+    def test_partial_meaningful_returns_success(self):
+        chunks = [
+            SimpleNamespace(document_name='경조사.pdf', content='본인 결혼 100만원'),
+            SimpleNamespace(document_name='무관.pdf', content='어제 회의록'),
+        ]
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=chunks,
+        ):
+            obs = tools.call('retrieve_documents', {'query': '결혼 휴가'})
+        self.assertFalse(obs.is_failure)
+        self.assertIsNone(obs.failure_kind)
+
+    def test_zero_hit_treated_as_low_relevance(self):
+        # P3: 0건도 failure_kind='low_relevance' 로 처리.
+        with patch(
+            'chat.services.agent.tools_builtin._retrieve',
+            return_value=[],
+        ):
+            obs = tools.call('retrieve_documents', {'query': '뭐든'})
+        self.assertTrue(obs.is_failure)
+        self.assertEqual(obs.failure_kind, 'low_relevance')

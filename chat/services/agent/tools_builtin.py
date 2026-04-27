@@ -278,12 +278,30 @@ def _short_value(value: Any) -> str:
     return text if len(text) <= 80 else text[:79] + '…'
 
 
+def _retrieve_failure_check(result: Any) -> bool:
+    """retrieve_documents 가 진전 없음 신호 — 'low_relevance' failure_kind 카운터용 (Phase 7-4).
+
+    True 조건:
+    - 0건: "no useful evidence" — all-low-relevance 와 동일 의미로 통합.
+    - 모든 hit 가 `_has_meaningful_match=False`: longest meaningful token 미매치.
+
+    False (= success) 조건:
+    - 적어도 한 hit 가 의미 토큰 매치.
+    """
+    query = (result or {}).get('query') or ''
+    hits = (result or {}).get('hits') or []
+    if not hits:
+        return True
+    return not any(_has_meaningful_match(getattr(h, 'content', '') or '', query) for h in hits)
+
+
 # ---------------------------------------------------------------------------
 # 등록 — import 부작용
 # ---------------------------------------------------------------------------
 
 register(Tool(
     name='retrieve_documents',
+    failure_check=_retrieve_failure_check,            # Phase 7-4: low-relevance 자동 failure.
     description=(
         '회사 문서 청크를 하이브리드 + reranker 로 검색합니다. '
         'query 는 자유형 한국어/영어 검색어.'

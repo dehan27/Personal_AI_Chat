@@ -46,6 +46,12 @@ DEFAULT_MAX_ITERATIONS = 6
 MAX_CONSECUTIVE_FAILURES = 3
 MAX_REPEATED_CALL = 3
 
+# Phase 7-4: retrieve_documents 의 'low_relevance' failure 누적 한도. consecutive
+# 가 아니라 누적 — tier-OR false positive 가 끼어 consecutive 가 리셋돼도 영향 없음.
+# `_decide_termination` 의 max_iter 보다 먼저 평가 → "retrieve 가 의미 없는 결과
+# 3+ 회" 시 UPSTREAM_ERROR 미도달 알고리즘적 보장.
+MAX_LOW_RELEVANCE_RETRIEVES = 3
+
 
 def run_agent(
     question: str,
@@ -134,17 +140,36 @@ def run_agent(
                 tool=tool_name,
                 summary=f'arguments must be an object: got {type(arguments).__name__}',
                 is_failure=True,
+                failure_kind='invalid_args',           # Phase 7-4
+            )
+            state.iteration_count += 1
+        elif state.repeated_call_count(tool_name, arguments) >= 1:
+            # Phase 7-4 Part 1: 동일 (tool, args) 호출 차단 — deterministic 도구라
+            # retry 무의미. 실제 callable 실행 안 하고 failure observation 만 남김.
+            logger.info(
+                'agent step %d: tool=%r 동일 호출 차단 (이전에 같은 인자로 호출됨)',
+                state.iteration_count, tool_name,
+            )
+            state.add_observation(
+                tool=tool_name,
+                summary=(
+                    '이전과 같은 인자로 이미 호출했습니다. '
+                    '다른 query/tool 또는 final_answer 를 선택하세요.'
+                ),
+                is_failure=True,
+                failure_kind='repeated_call',          # low_relevance 와 분리.
             )
             state.iteration_count += 1
         else:
             state.record_tool_call(tool_name, arguments)
             obs = agent_tools.call(tool_name, arguments)
             logger.info(
-                'agent step %d: tool=%r args=%r → is_failure=%s summary=%r',
+                'agent step %d: tool=%r args=%r → is_failure=%s kind=%s summary=%r',
                 state.iteration_count,
                 tool_name,
                 dict(arguments),
                 obs.is_failure,
+                obs.failure_kind,
                 obs.summary[:120],
             )
             state.observations.append(obs)
@@ -189,7 +214,19 @@ def _decide_termination(
     state: AgentState,
     max_iterations: int,
 ) -> Optional[AgentTermination]:
-    """다음 iteration 으로 갈지, 종료할지 판정."""
+    """다음 iteration 으로 갈지, 종료할지 판정.
+
+    Phase 7-4 우선순위 (DoD 의 알고리즘적 보장 정합):
+    1) `low_relevance_retrieve_count` 누적 가드 — 마지막 step 에서 max_iter 와
+       동시 도달해도 NOT_FOUND 우선 반환. P2-1 의 직접 보강.
+    2) `iter >= max_iter` 안전판.
+    3) consecutive_failures.
+    4) repeated_call_count (Part 1 차단으로 사실상 도달 불가, 하위 호환성).
+    """
+    # Phase 7-4: low_relevance 누적 가드 — max_iter 보다 먼저 평가.
+    if state.low_relevance_retrieve_count() >= MAX_LOW_RELEVANCE_RETRIEVES:
+        return AgentTermination.NO_MORE_USEFUL_TOOLS
+
     if state.iteration_count >= max_iterations:
         return AgentTermination.MAX_ITERATIONS_EXCEEDED
 
