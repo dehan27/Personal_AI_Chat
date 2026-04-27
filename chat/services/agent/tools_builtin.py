@@ -11,7 +11,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import string
+from typing import Any, List, Mapping
 
 from chat.services.agent.tools import Tool, register
 from chat.services.single_shot.qa_cache import find_canonical_qa as _qa_cache_find
@@ -19,6 +20,93 @@ from chat.services.single_shot.retrieval import retrieve_documents as _retrieve
 from chat.workflows.core import WorkflowResult
 from chat.workflows.domains import dispatch as _workflow_dispatch
 from chat.workflows.domains.field_spec import FieldSpec
+
+
+# ---------------------------------------------------------------------------
+# Phase 7-3: query-focused snippet windowing helpers
+# ---------------------------------------------------------------------------
+
+# 토큰 양 끝에 흔히 붙는 문장부호 — strip 대상.
+# ASCII punctuation + 한국어 콤마/물음표/문장 부호.
+_TOKEN_STRIP_CHARS = string.punctuation + '·、，。？！'
+
+# 한국어 1자 조사/어미/단일 stopword 제거. 영문은 'a', 'I' 등 단일 문자도 같은 이유로 컷.
+_KEYWORD_MIN_LEN = 2
+
+
+def _tokenize_query(query: str) -> List[str]:
+    """Query 를 윈도우 매칭용 토큰으로 분리 (Phase 7-3).
+
+    - 공백 split.
+    - 토큰 양 끝 punctuation strip (`결혼?` → `결혼`, `"경조금"` → `경조금`).
+    - 길이 ≥ 2 만 유지.
+    - **길이 내림차순 정렬** — 긴 토큰일수록 도메인 키워드일 확률이 높음.
+      매치 시 긴 토큰 위치 우선 → 일반 토큰 ("비교", "있는", "하는") 이 청크
+      앞부분에 우연히 걸려 관련 없는 윈도우를 고르는 회귀 차단.
+
+    한국어 형태소 분석기 (KoNLPy / Mecab) 미도입 — 의존성 비용 vs 효용. 운영
+    데이터에서 부족이 입증되면 후속 Phase 에서 검토.
+    """
+    if not query:
+        return []
+    tokens: List[str] = []
+    for raw in query.split():
+        cleaned = raw.strip(_TOKEN_STRIP_CHARS)
+        if len(cleaned) >= _KEYWORD_MIN_LEN:
+            tokens.append(cleaned)
+    # Python sort 는 stable — 같은 길이 토큰은 입력 순서 유지.
+    tokens.sort(key=len, reverse=True)
+    return tokens
+
+
+def _focus_window(content: str, query: str, *, length: int) -> str:
+    """Query 키워드 매치 위치 주변 forward-bias 윈도우. 미매치면 첫 N자 fallback.
+
+    윈도우 정책: 매치 위치 기준 앞 1/4 + 뒤 3/4. `start = max(0, earliest -
+    length//4)` 의 자연 클램프 덕분에 매치가 청크 매우 앞 (`< length//4`) 이면
+    자동으로 `start=0` → 첫 N자 출력 = 7-2 fallback 과 byte-identical.
+
+    의도적으로 `earliest < length` 강제 분기를 두지 않는다 — 그건 "키워드는
+    350자, 값은 450자" 같은 흔한 표 패턴에서 본 목적 (401자+ 답 노출) 을 깨뜨린다.
+    forward-bias 한 줄기로 처리하면 매치 위치별로 자연스럽게:
+        earliest < length//4   → start=0 (7-2 byte-identical)
+        length//4 ≤ earliest   → 매치 주변 ±윈도우 (7-3 의 본 가치)
+    """
+    if not content:
+        return ''
+    if len(content) <= length:
+        return content
+    if not query:
+        return content[:length] + '…'
+
+    tokens = _tokenize_query(query)
+    if not tokens:
+        return content[:length] + '…'
+
+    # 긴 토큰부터 매치 — 정렬 덕분에 첫 매치 = 가장 긴 매치된 토큰의 위치.
+    lower = content.lower()
+    earliest = -1
+    for token in tokens:
+        idx = lower.find(token.lower())
+        if idx >= 0:
+            earliest = idx
+            break
+
+    if earliest < 0:
+        # 미매치 — 청크 첫 N자 fallback (7-2 동작과 동일).
+        return content[:length] + '…'
+
+    # forward-bias: 앞 1/4 + 뒤 3/4. 표 행은 매치 위치 다음에 값/단위가 옴.
+    pre = length // 4
+    start = max(0, earliest - pre)
+    end = min(len(content), start + length)
+    # content 끝에 닿으면 start 를 뒤로 당겨 윈도우 길이 보존.
+    start = max(0, end - length)
+
+    snippet = content[start:end]
+    prefix = '…' if start > 0 else ''
+    suffix = '…' if end < len(content) else ''
+    return prefix + snippet + suffix
 
 
 # ---------------------------------------------------------------------------

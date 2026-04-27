@@ -2,6 +2,9 @@
 
 세 도구가 실제 모듈로 위임되는지 mock 으로 확인. summarize 출력의 한국어 요약이
 LLM 다음 iteration 컨텍스트에 그대로 실릴 모양인지 검증.
+
+Phase 7-3 부터 `_focus_window` / `_tokenize_query` helper 의 격리 단위 테스트
+(`FocusWindowTests`) 와 retrieve summary 의 windowing 회귀 테스트가 추가됨.
 """
 
 from types import SimpleNamespace
@@ -10,6 +13,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from chat.services.agent import tools
+from chat.services.agent.tools_builtin import _focus_window, _tokenize_query
 from chat.workflows.core import WorkflowResult
 
 
@@ -176,3 +180,162 @@ class RunWorkflowToolTests(SimpleTestCase):
             })
         self.assertIn('missing', obs.summary)
         self.assertIn('start', obs.summary)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7-3: query-focused snippet windowing
+# ---------------------------------------------------------------------------
+
+
+class TokenizeQueryTests(SimpleTestCase):
+    """`_tokenize_query` — punctuation strip + len≥2 + len desc sort."""
+
+    def test_empty_query_returns_empty_list(self):
+        self.assertEqual(_tokenize_query(''), [])
+        self.assertEqual(_tokenize_query('   '), [])
+
+    def test_strips_trailing_punctuation(self):
+        # `결혼?` / `"경조금"` 같은 케이스에서 양 끝 punctuation 제거.
+        result = _tokenize_query('결혼? "경조금"')
+        self.assertIn('결혼', result)
+        self.assertIn('경조금', result)
+
+    def test_drops_single_char_tokens(self):
+        # 1자 조사/어미 ('는', '이') 제거. 2자+ 만 살아남음.
+        result = _tokenize_query('가 나 다 결혼')
+        self.assertEqual(result, ['결혼'])
+
+    def test_sorts_by_length_descending(self):
+        # 긴 토큰부터 → 짧은 토큰 순.
+        result = _tokenize_query('비교 결혼 경조금')  # 2 / 2 / 3
+        self.assertEqual(result[0], '경조금')
+
+    def test_stable_sort_for_same_length_tokens(self):
+        # 같은 길이는 입력 순서 유지 — `결혼` 이 `휴가` 보다 앞에.
+        result = _tokenize_query('결혼 휴가')
+        self.assertEqual(result, ['결혼', '휴가'])
+
+
+class FocusWindowTests(SimpleTestCase):
+    """`_focus_window` — forward-bias 윈도우 + 7-2 byte-identical 회귀 가드."""
+
+    LENGTH = 400
+
+    def _content(self, total_len, *, marker_pos=None, marker='[VALUE]'):
+        """길이 `total_len` 의 채움 content. marker_pos 가 지정되면 그 위치에 marker 삽입."""
+        filler = 'x' * total_len
+        if marker_pos is None:
+            return filler
+        return filler[:marker_pos] + marker + filler[marker_pos + len(marker):][:total_len - marker_pos - len(marker)]
+
+    # ---------- edge cases ----------
+
+    def test_empty_content_returns_empty_string(self):
+        self.assertEqual(_focus_window('', '결혼', length=self.LENGTH), '')
+
+    def test_content_shorter_than_length_returns_unchanged(self):
+        short = '짧은 본문'
+        self.assertEqual(_focus_window(short, '결혼', length=self.LENGTH), short)
+
+    def test_empty_query_falls_back_to_first_n_chars(self):
+        long = 'a' * 1000
+        result = _focus_window(long, '', length=self.LENGTH)
+        self.assertEqual(result, 'a' * self.LENGTH + '…')
+
+    def test_only_one_char_tokens_falls_back_to_first_n_chars(self):
+        long = 'a' * 1000
+        # 1자만 있는 query → 토큰 0 → fallback.
+        result = _focus_window(long, '가 나 다', length=self.LENGTH)
+        self.assertEqual(result, 'a' * self.LENGTH + '…')
+
+    # ---------- 매치 위치별 동작 ----------
+
+    def test_match_in_very_front_is_byte_identical_to_7_2_fallback(self):
+        # earliest < length//4 (예: 50자) → 자연 클램프로 start=0 → 첫 N자 + '…'.
+        content = self._content(1000, marker_pos=50, marker='결혼')
+        result = _focus_window(content, '결혼', length=self.LENGTH)
+        # 7-2 fallback 출력과 byte-identical: 첫 400자 + '…'
+        expected_first_400 = content[:self.LENGTH] + '…'
+        self.assertEqual(result, expected_first_400)
+        # prefix `…` 없음 (start == 0)
+        self.assertFalse(result.startswith('…'))
+
+    def test_keyword_at_350_with_value_at_450_window_includes_value(self):
+        # P2 추가 지적의 본 케이스: 키워드는 length 안 (350자), 값은 length 너머 (450자).
+        # 7-2 fallback 으로는 값을 못 봤지만 7-3 forward-bias 로 윈도우가 이동해
+        # 값을 포함해야 함.
+        content = (
+            'a' * 350           # 0~349: 채움
+            + '결혼'             # 350~351: 키워드
+            + 'b' * 98           # 352~449: 채움
+            + '[VAL]'            # 450~454: 값
+            + 'c' * 545          # 455~999: 채움
+        )
+        self.assertEqual(len(content), 1000)
+        result = _focus_window(content, '결혼', length=self.LENGTH)
+        # 값이 윈도우에 포함됐는지 — 본 PR 의 핵심 검증.
+        self.assertIn('[VAL]', result)
+        # 7-2 byte-identical 은 아님 — 윈도우가 이동.
+        self.assertNotEqual(result, content[:self.LENGTH] + '…')
+
+    def test_match_past_length_window_centers_around_match(self):
+        # earliest ≥ length (예: 600자) — windowing 의 본 무대.
+        content = (
+            'a' * 600           # 0~599: 채움
+            + '경조금'           # 600~602: 키워드
+            + 'b' * 397          # 603~999: 채움
+        )
+        self.assertEqual(len(content), 1000)
+        result = _focus_window(content, '경조금', length=self.LENGTH)
+        # 윈도우에 키워드 포함.
+        self.assertIn('경조금', result)
+        # prefix '…' 있음 — start > 0.
+        self.assertTrue(result.startswith('…'))
+
+    def test_match_near_end_anchors_window_to_content_end(self):
+        # 매치가 content 끝 근처 (예: 950자) → 윈도우 끝이 1000 에 달라붙고 길이 보존.
+        content = 'a' * 950 + '결혼' + 'b' * 48
+        self.assertEqual(len(content), 1000)
+        result = _focus_window(content, '결혼', length=self.LENGTH)
+        # 끝에 닿았으므로 suffix '…' 없음.
+        self.assertFalse(result.endswith('…'))
+        self.assertIn('결혼', result)
+
+    def test_no_match_falls_back_to_first_n_chars(self):
+        long = 'a' * 1000
+        result = _focus_window(long, '결혼', length=self.LENGTH)
+        # 미매치 → 첫 400자 + '…' (7-2 fallback 과 동일).
+        self.assertEqual(result, 'a' * self.LENGTH + '…')
+
+    def test_case_insensitive_match(self):
+        # query 'MAX' 가 content 의 'max' 와 매치.
+        content = 'a' * 600 + 'max' + 'b' * 397
+        result = _focus_window(content, 'MAX', length=self.LENGTH)
+        self.assertIn('max', result.lower())
+        self.assertTrue(result.startswith('…'))
+
+    # ---------- P2-3: 토큰 우선순위 정책 ----------
+
+    def test_longer_token_takes_precedence_over_earlier_short_token(self):
+        # query 에 '비교' (2자) + '경조금' (3자). 청크의 '비교' 가 50자 위치, '경조금' 이
+        # 600자 위치. 윈도우 중심은 길이 우선 정책에 의해 600 (`경조금`) 이어야 함.
+        content = (
+            'a' * 50            # 0~49
+            + '비교'             # 50~51
+            + 'b' * 548          # 52~599
+            + '경조금'            # 600~602
+            + 'c' * 397          # 603~999
+        )
+        self.assertEqual(len(content), 1000)
+        result = _focus_window(content, '비교 결혼 경조금', length=self.LENGTH)
+        self.assertIn('경조금', result)
+        # `비교` 위치가 50 (< length//4 = 100) 이라면 `비교` 매치 시 byte-identical
+        # 첫 N자 였을 텐데, 긴 토큰 우선이라 `경조금` 위치가 윈도우 중심 → prefix '…'.
+        self.assertTrue(result.startswith('…'))
+
+    def test_punctuation_stripped_from_query_tokens(self):
+        # query '결혼?' 의 '?' 는 strip 되어 '결혼' 매치.
+        content = 'a' * 600 + '결혼' + 'b' * 397
+        result = _focus_window(content, '결혼?', length=self.LENGTH)
+        self.assertIn('결혼', result)
+        self.assertTrue(result.startswith('…'))
