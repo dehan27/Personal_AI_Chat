@@ -121,6 +121,24 @@ single_shot / workflow / agent 세 경로 모두 같은 `rewrite_query_with_hist
 - 신규 row `unknown` 카운트 0.
 - `agent_final` 정확히 1, `agent_step` ≥ 1.
 
+### 운영 환경 smoke 한계 (2026-04-28)
+
+본 PR 머지 전 smoke 시점 운영 환경에 **표 데이터를 가진 PDF 가 업로드되어 있지 않아** `workflow_table_lookup` purpose 는 운영 환경 smoke 로 발동하지 못함. 시나리오 4 의 `table_lookup` workflow 가 router 매칭은 됐어도 `retrieve_documents` 가 표를 포함한 청크를 못 찾아 `WorkflowResult.not_found` early return 직전까지 도달해서 LLM 호출 단계에 못 미침 (혹은 router 자체에서 single_shot 으로 떨어짐 — 분포상 `workflow_extractor=1` 단일이라 후자가 더 정합).
+
+대신 unit test (`chat/tests/test_token_usage_purpose_call_sites.py`의 `TableLookupPurposeTests`) 가 `_ask_llm_for_cell` 호출 시 `record_token_usage(..., purpose=PURPOSE_WORKFLOW_TABLE_LOOKUP)` 가 정확히 발생함을 mock 으로 회귀 가드 중. 즉 **purpose 전달 메커니즘 자체는 검증됨** — 운영 환경에서 발동만 못 한 것. 표 PDF 가 추가되면 후속 smoke 로 자연스레 확인됨.
+
+운영 smoke 분포 결과 (base_max_id=434, 5 시나리오 × 2회 누적 25 row):
+
+| purpose | 카운트 | 비고 |
+|---|---|---|
+| `agent_final` | 2 | 시나리오 5 ×2회 |
+| `agent_step` | 8 | 시나리오 5 의 ReAct iterations |
+| `query_rewriter` | 10 | 3 호출 경로 (single_shot / workflow / agent) 누적 |
+| `workflow_extractor` | 1 | 시나리오 3 (date_calculation) 회귀 가드 |
+| `single_shot_answer` | 4 | 시나리오 2 / 4 (4가 single_shot 으로 떨어짐 추정) |
+| `workflow_table_lookup` | 0 | unit test 만 회귀 가드 (운영 한계) |
+| `unknown` | 0 | 누락 호출 0 ✓ |
+
 ---
 
 ## 6. 후속 (Phase 8-3 / 후속)
