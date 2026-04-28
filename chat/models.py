@@ -99,12 +99,19 @@ class Feedback(models.Model):
 
 
 class TokenUsage(models.Model):
-    """OpenAI 호출별 토큰 사용량 로그 (대시보드 집계 원천)."""
+    """OpenAI 호출별 토큰 사용량 로그 (대시보드 집계 원천).
+
+    Phase 8-2: `purpose` 필드 추가 — 호출 목적을 코드 상수 (`chat.services.token_purpose`)
+    기준으로 구분. CharField + db_index 라 분해 집계가 가벼움. 8-2 머지 이전 row 는
+    default='unknown' 으로 일괄 분류. validate_purpose 방어망이 알 수 없는 값을
+    'unknown' 으로 절감해 호출부 오타가 데이터 오염으로 직결되지 않게.
+    """
 
     model = models.CharField(max_length=100)
     prompt_tokens = models.PositiveIntegerField(default=0)
     completion_tokens = models.PositiveIntegerField(default=0)
     total_tokens = models.PositiveIntegerField(default=0)
+    purpose = models.CharField(max_length=32, default='unknown', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
