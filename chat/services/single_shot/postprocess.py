@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from chat.models import TokenUsage
 from chat.services.qa_retriever import save_chat_log
+from chat.services.token_purpose import PURPOSE_UNKNOWN, validate_purpose
 from files.services.retriever import ChunkHit
 
 
@@ -51,18 +52,28 @@ def classify_reply(reply: str) -> Tuple[bool, bool]:
     return is_no_info, is_casual
 
 
-def record_token_usage(model: str, usage: Any) -> None:
+def record_token_usage(
+    model: str,
+    usage: Any,
+    *,
+    purpose: str = PURPOSE_UNKNOWN,
+) -> None:
     """OpenAI 응답의 usage 를 TokenUsage 테이블에 한 행으로 기록.
 
     usage 는 OpenAI SDK 의 CompletionUsage 호환 객체 (prompt_tokens /
     completion_tokens / total_tokens 속성). 캐시 히트 등 호출이 없었던
     경로에서는 이 함수를 호출하지 않는다.
+
+    Phase 8-2: keyword-only `purpose` 추가. 기존 `record_token_usage(model, usage)`
+    호출 호환 (default 'unknown'). `validate_purpose` 가 알 수 없는 값을
+    'unknown' 으로 절감 — 호출부 오타가 데이터 오염으로 직결되지 않게.
     """
     TokenUsage.objects.create(
         model=model,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
         total_tokens=usage.total_tokens,
+        purpose=validate_purpose(purpose),
     )
 
 

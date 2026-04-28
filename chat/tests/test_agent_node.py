@@ -104,7 +104,12 @@ class AgentNodeTests(SimpleTestCase):
         rw.assert_called_once()
         # run_agent 가 rewritten 결과로 호출됐는지.
         run.assert_called_once_with('자립 검색어', history=[{'role': 'user', 'content': '이전 질문'}])
-        record.assert_called_once_with('gpt-4o-mini', rw.return_value[1])
+        # Phase 8-2: rewriter 호출은 purpose='query_rewriter' 명시 전달.
+        from chat.services.token_purpose import PURPOSE_QUERY_REWRITER
+        record.assert_called_once_with(
+            'gpt-4o-mini', rw.return_value[1],
+            purpose=PURPOSE_QUERY_REWRITER,
+        )
         self.assertEqual(out['result'].reply, '답')
 
     def test_rewriter_usage_none_skips_record(self):

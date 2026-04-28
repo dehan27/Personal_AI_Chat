@@ -34,6 +34,7 @@ from chat.services.agent.reply import build_reply_from_agent_result
 from chat.services.query_rewriter import rewrite_query_with_history
 from chat.services.single_shot.postprocess import record_token_usage
 from chat.services.single_shot.types import QueryResult
+from chat.services.token_purpose import PURPOSE_QUERY_REWRITER
 
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,10 @@ def agent_node(state: GraphState) -> dict:
         )
         if rw_usage and rw_model:
             try:
-                record_token_usage(rw_model, rw_usage)
+                record_token_usage(
+                    rw_model, rw_usage,
+                    purpose=PURPOSE_QUERY_REWRITER,
+                )
             except Exception as exc:                                  # noqa: BLE001
                 # 토큰 기록 실패는 답변 자체를 막지 않는다 (table_lookup 패턴 동일).
                 logger.warning('agent rewriter TokenUsage 기록 실패: %s', exc)

@@ -34,6 +34,7 @@ from chat.services.agent.state import AgentState
 from chat.services.single_shot.llm import run_chat_completion
 from chat.services.single_shot.postprocess import record_token_usage
 from chat.services.single_shot.types import QueryPipelineError
+from chat.services.token_purpose import PURPOSE_AGENT_FINAL, PURPOSE_AGENT_STEP
 
 
 logger = logging.getLogger(__name__)
@@ -96,14 +97,23 @@ def run_agent(
             logger.warning('agent LLM 예기치 못한 오류: %s', exc)
             return to_agent_result(AgentTermination.FATAL_ERROR, state=state)
 
+        # Phase 8-2: action 결과를 보고 purpose 분기 — final_answer iteration 만
+        # PURPOSE_AGENT_FINAL, 나머지 (도구 호출 / parse 실패) 는 PURPOSE_AGENT_STEP.
+        # record 를 _parse_action 호출 직후로 이동.
+        action = _parse_action(raw)
+
         if usage is not None and model:
             try:
-                record_token_usage(model, usage)
+                purpose = (
+                    PURPOSE_AGENT_FINAL
+                    if action and action.get('action') == 'final_answer'
+                    else PURPOSE_AGENT_STEP
+                )
+                record_token_usage(model, usage, purpose=purpose)
             except Exception as exc:                                  # noqa: BLE001
                 # TokenUsage 기록 실패는 답변 자체를 막지 않는다.
                 logger.warning('agent TokenUsage 기록 실패: %s', exc)
 
-        action = _parse_action(raw)
         if action is None:
             if parse_retry_budget > 0:
                 parse_retry_budget -= 1

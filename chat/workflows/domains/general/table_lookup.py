@@ -32,6 +32,7 @@ from chat.services.single_shot.llm import run_chat_completion
 from chat.services.single_shot.postprocess import record_token_usage
 from chat.services.single_shot.retrieval import retrieve_documents
 from chat.services.single_shot.types import QueryPipelineError
+from chat.services.token_purpose import PURPOSE_WORKFLOW_TABLE_LOOKUP
 from chat.workflows.core import (
     ValidationResult,
     WorkflowResult,
@@ -147,7 +148,7 @@ def _ask_llm_for_cell(
     # LLM 호출이 실제로 돌았으므로 토큰 기록. 성공·빈 응답 상관 없음.
     if usage is not None and model:
         try:
-            record_token_usage(model, usage)
+            record_token_usage(model, usage, purpose=PURPOSE_WORKFLOW_TABLE_LOOKUP)
         except Exception as exc:                                      # noqa: BLE001
             # TokenUsage 기록 실패가 답변 자체를 실패시키지 않는다.
             logger.warning('table_lookup TokenUsage 기록 실패: %s', exc)
