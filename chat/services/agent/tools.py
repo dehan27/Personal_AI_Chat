@@ -93,7 +93,16 @@ def call(name: str, arguments: Mapping[str, Any]) -> Observation:
     Phase 7-4: failure 종류별로 `failure_kind` 분리 — `'unknown_tool' /
     'schema_invalid' / 'callable_error' / 'low_relevance'`. 누적 가드는
     `'low_relevance'` 만 카운트해 자료 없음과 실행 오류를 분리.
+
+    Phase 8-1:
+    - 모든 Observation 반환 경로에 `arguments=args` 보존 — `args` 정규화를 함수
+      진입 직후로 이동해 unknown_tool 분기에서도 args 가 정의됨.
+    - callable 결과가 dict 이고 `'evidence'` 키가 있으면 `evidence=tuple(...)`
+      로 obs 에 부착 (retrieve_documents 의 top-1 SourceRef 노출 경로).
     """
+    # Phase 8-1: args 정규화를 lookup 보다 먼저 — unknown_tool 도 args 보존.
+    args = dict(arguments or {})
+
     tool = _REGISTRY.get(name)
     if tool is None:
         return Observation(
@@ -101,9 +110,8 @@ def call(name: str, arguments: Mapping[str, Any]) -> Observation:
             summary=f'unknown tool: {name!r}',
             is_failure=True,
             failure_kind='unknown_tool',
+            arguments=args,
         )
-
-    args = dict(arguments or {})
 
     if tool.input_schema is not None:
         validation = _validate_against_schema(args, tool.input_schema)
@@ -114,6 +122,7 @@ def call(name: str, arguments: Mapping[str, Any]) -> Observation:
                 summary=f'input invalid: {problem}',
                 is_failure=True,
                 failure_kind='schema_invalid',
+                arguments=args,
             )
 
     try:
@@ -124,6 +133,7 @@ def call(name: str, arguments: Mapping[str, Any]) -> Observation:
             summary=f'tool error: {type(exc).__name__}: {exc}',
             is_failure=True,
             failure_kind='callable_error',
+            arguments=args,
         )
 
     try:
@@ -135,6 +145,7 @@ def call(name: str, arguments: Mapping[str, Any]) -> Observation:
             tool=name,
             summary=f'tool ok, but summarize failed: {type(exc).__name__}',
             is_failure=False,
+            arguments=args,
         )
 
     # Phase 7-4: failure_check — callable 정상 반환했어도 의미상 실패로 분류할지.
@@ -151,9 +162,15 @@ def call(name: str, arguments: Mapping[str, Any]) -> Observation:
                 'failure_check error for tool %r: %s', tool.name, exc,
             )
 
+    # Phase 8-1: result dict 의 'evidence' 키가 있으면 obs.evidence 로.
+    evidence: tuple = ()
+    if isinstance(raw_result, dict) and 'evidence' in raw_result:
+        evidence = tuple(raw_result['evidence'] or ())
+
     return Observation(
         tool=name, summary=summary,
         is_failure=is_failure, failure_kind=failure_kind,
+        arguments=args, evidence=evidence,
     )
 
 

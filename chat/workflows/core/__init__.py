@@ -31,6 +31,7 @@ from chat.workflows.core.numbers import (
     sum_amounts,
 )
 from chat.workflows.core.result import (
+    BaseResult,
     ValidationResult,
     WorkflowResult,
     WorkflowStatus,
@@ -48,6 +49,7 @@ from chat.workflows.core.validation import (
 
 __all__ = [
     # 결과 타입
+    'BaseResult',
     'ValidationResult',
     'WorkflowResult',
     'WorkflowStatus',

@@ -213,3 +213,83 @@ class ToolsUnknownToolKindTests(SimpleTestCase):
         obs = tools.call('ghost', {})
         self.assertTrue(obs.is_failure)
         self.assertEqual(obs.failure_kind, 'unknown_tool')
+
+
+# ---------------------------------------------------------------------------
+# Phase 8-1: tools.call 의 모든 5 Observation 경로가 arguments 보존 + evidence 부착
+# ---------------------------------------------------------------------------
+
+
+class ToolsArgumentsPreservationTests(SimpleTestCase):
+    """tools.call 의 모든 Observation 반환 경로가 arguments 를 보존해야 한다 (Phase 8-1).
+
+    `args` 정규화 위치를 lookup 보다 먼저로 옮긴 결과 — unknown_tool 분기에서도
+    args 가 정의되어 obs 에 박힌다.
+    """
+
+    def setUp(self):
+        self._snapshot = tools._snapshot_for_tests()
+        tools._reset_for_tests()
+
+    def tearDown(self):
+        tools._restore_for_tests(self._snapshot)
+
+    def test_unknown_tool_preserves_args(self):
+        obs = tools.call('ghost', {'q': '비교'})
+        self.assertEqual(dict(obs.arguments), {'q': '비교'})
+
+    def test_schema_invalid_preserves_args(self):
+        # 필수 query 빠진 호출 → schema_invalid + 잘못된 args 그대로 보존.
+        tools.register(_schema_tool(lambda args: 'x'))
+        obs = tools.call('echo', {'wrong_field': 'v'})
+        self.assertEqual(obs.failure_kind, 'schema_invalid')
+        self.assertEqual(dict(obs.arguments), {'wrong_field': 'v'})
+
+    def test_callable_error_preserves_args(self):
+        def boom(args):
+            raise RuntimeError('boom')
+        tools.register(_schema_tool(boom))
+        obs = tools.call('echo', {'query': 'x'})
+        self.assertEqual(obs.failure_kind, 'callable_error')
+        self.assertEqual(dict(obs.arguments), {'query': 'x'})
+
+    def test_summarize_error_preserves_args(self):
+        # summarize 예외는 is_failure=False 로 흡수, args 는 보존.
+        tools.register(_schema_tool(
+            lambda args: 'raw',
+            summarize=lambda r: (_ for _ in ()).throw(ValueError('bad')),
+        ))
+        obs = tools.call('echo', {'query': 'x'})
+        self.assertFalse(obs.is_failure)
+        self.assertEqual(dict(obs.arguments), {'query': 'x'})
+
+    def test_success_path_preserves_args(self):
+        tools.register(_schema_tool(lambda args: 'ok'))
+        obs = tools.call('echo', {'query': '경조사'})
+        self.assertFalse(obs.is_failure)
+        self.assertEqual(dict(obs.arguments), {'query': '경조사'})
+
+
+class ToolsEvidenceAttachmentTests(SimpleTestCase):
+    """Phase 8-1: callable 결과 dict 에 'evidence' 키가 있으면 obs.evidence 로 부착."""
+
+    def setUp(self):
+        self._snapshot = tools._snapshot_for_tests()
+        tools._reset_for_tests()
+
+    def tearDown(self):
+        tools._restore_for_tests(self._snapshot)
+
+    def test_evidence_key_in_dict_result_attached(self):
+        from chat.services.agent.result import SourceRef
+        ref = SourceRef(name='a.pdf', url='/media/a')
+        tools.register(_raw_tool(
+            lambda args: {'value': 'x', 'evidence': [ref]},
+        ))
+        obs = tools.call('raw_op', {})
+        self.assertEqual(obs.evidence, (ref,))
+
+    def test_no_evidence_key_keeps_empty_tuple(self):
+        tools.register(_raw_tool(lambda args: 'ok'))
+        obs = tools.call('raw_op', {})
+        self.assertEqual(obs.evidence, ())

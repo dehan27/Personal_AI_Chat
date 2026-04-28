@@ -20,8 +20,13 @@ Phase 7 분할:
 
     from chat.services.agent.react import run_agent
     from chat.services.agent.reply import build_reply_from_agent_result
-    result = run_agent(question, history)            # → WorkflowResult
+    result = run_agent(question, history)            # → AgentResult (Phase 8-1 부터)
     reply = build_reply_from_agent_result(result)    # → str (사용자-facing)
+    sources = result.sources_as_dicts()              # → [{'name', 'url'}, ...]
+
+Phase 8-1 변경: `run_agent` 반환형이 `WorkflowResult` → `AgentResult` 로 전환.
+`AgentResult` 는 `BaseResult` Protocol implement + `termination` / `tool_calls` /
+`sources` 1급 필드. workflow 와 호환되는 어댑터(`to_workflow_result()`) 도 제공.
 
 설계 문서: `resources/plans/2.0.0_Phase 7_Agent_개발_설계.md`.
 플랜 문서:

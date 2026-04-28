@@ -15,6 +15,11 @@ from chat.services.agent.react import (
     MAX_CONSECUTIVE_FAILURES,
     MAX_REPEATED_CALL,
 )
+from chat.services.agent.result import (
+    AgentResult,
+    AgentTermination,
+    SourceRef,
+)
 from chat.services.agent.tools import Tool
 from chat.workflows.core import WorkflowStatus
 from chat.workflows.domains.field_spec import FieldSpec
@@ -306,3 +311,213 @@ class RuntimeGuardCumulativeTests(SimpleTestCase):
         # 동시 도달이지만 low_rel 가드 우선 → NOT_FOUND, 절대 UPSTREAM_ERROR 아님.
         self.assertEqual(r.status, WorkflowStatus.NOT_FOUND)
         self.assertNotEqual(r.status, WorkflowStatus.UPSTREAM_ERROR)
+
+
+# ---------------------------------------------------------------------------
+# Phase 8-1: run_agent → AgentResult / 1:1 trace / sources 정책
+# ---------------------------------------------------------------------------
+
+
+def _make_evidence_dummy(*, name='dummy', source_ref=None, low_relevance=False):
+    """callable 결과 dict 에 'evidence' 를 넣어 obs.evidence 까지 흐르게 하는 도구."""
+    def _callable(args):
+        result = {'value': args.get('query', '')}
+        if source_ref is not None:
+            result['evidence'] = [source_ref]
+        return result
+
+    return Tool(
+        name=name,
+        description='evidence carrier',
+        input_schema={'query': FieldSpec(type='text', required=True)},
+        callable=_callable,
+        summarize=lambda r: f"v:{r.get('value', '')}",
+        failure_check=(lambda r: True) if low_relevance else None,
+    )
+
+
+class RunAgentReturnsAgentResultTests(SimpleTestCase):
+    """Phase 8-1: run_agent 의 반환 타입 + 1급 필드 (termination / tool_calls / sources)."""
+
+    def setUp(self):
+        self._snapshot = agent_tools._snapshot_for_tests()
+        agent_tools._reset_for_tests()
+        agent_tools.register(_make_dummy_tool())
+
+    def tearDown(self):
+        agent_tools._restore_for_tests(self._snapshot)
+
+    def _patch_llm(self, replies):
+        return patch(
+            'chat.services.agent.react.run_chat_completion',
+            side_effect=_completion(*replies),
+        )
+
+    def test_return_type_is_agent_result(self):
+        replies = ['{"thought": "끝", "action": "final_answer", "answer": "ok"}']
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        self.assertIsInstance(r, AgentResult)
+        self.assertEqual(r.termination, AgentTermination.FINAL_ANSWER)
+
+    def test_tool_calls_one_to_one_with_observations(self):
+        # tool 1 회 + final_answer → tool_calls 길이 1 (final_answer 는 obs 안 만듦).
+        replies = [
+            '{"thought": "1", "action": "dummy", "arguments": {"query": "a"}}',
+            '{"thought": "2", "action": "final_answer", "answer": "ok"}',
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        self.assertEqual(len(r.tool_calls), 1)
+        self.assertEqual(r.tool_calls[0].tool, 'dummy')
+        self.assertEqual(r.tool_calls[0].arguments, {'query': 'a'})
+        self.assertFalse(r.tool_calls[0].is_failure)
+
+
+class RunAgentSourcesPolicyTests(SimpleTestCase):
+    """Phase 8-1: sources 노출 정책 — status 무관 + low_relevance 제외 + dedup."""
+
+    def setUp(self):
+        self._snapshot = agent_tools._snapshot_for_tests()
+        agent_tools._reset_for_tests()
+
+    def tearDown(self):
+        agent_tools._restore_for_tests(self._snapshot)
+
+    def _patch_llm(self, replies):
+        return patch(
+            'chat.services.agent.react.run_chat_completion',
+            side_effect=_completion(*replies),
+        )
+
+    def test_sources_collected_from_evidence_on_ok(self):
+        ref = SourceRef(name='a.pdf', url='/media/a')
+        agent_tools.register(_make_evidence_dummy(name='dummy', source_ref=ref))
+        replies = [
+            '{"thought": "검색", "action": "dummy", "arguments": {"query": "a"}}',
+            '{"thought": "끝", "action": "final_answer", "answer": "ok"}',
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        self.assertEqual(r.status, WorkflowStatus.OK)
+        self.assertEqual(r.sources, (ref,))
+
+    def test_low_relevance_evidence_excluded_even_when_present(self):
+        # callable 이 evidence 를 넣어줬어도 failure_kind='low_relevance' 면 sources 제외.
+        ref = SourceRef(name='무관.pdf', url='/media/none')
+        agent_tools.register(_make_evidence_dummy(
+            name='dummy', source_ref=ref, low_relevance=True,
+        ))
+        replies = [
+            '{"thought": "검색", "action": "dummy", "arguments": {"query": "a"}}',
+            '{"thought": "끝", "action": "final_answer", "answer": "ok"}',
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        self.assertEqual(r.sources, ())
+
+    def test_sources_dedup_across_observations(self):
+        # 두 번 같은 ref 가 evidence 로 들어와도 dedup 1건.
+        ref = SourceRef(name='a.pdf', url='/media/a')
+        agent_tools.register(_make_evidence_dummy(name='dummy', source_ref=ref))
+        replies = [
+            '{"thought": "1", "action": "dummy", "arguments": {"query": "a"}}',
+            '{"thought": "2", "action": "dummy", "arguments": {"query": "b"}}',
+            '{"thought": "끝", "action": "final_answer", "answer": "ok"}',
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        self.assertEqual(len(r.sources), 1)
+        self.assertEqual(r.sources[0].name, 'a.pdf')
+
+    def test_sources_status_agnostic_exposed_on_not_found(self):
+        # NOT_FOUND 종료 (max_iter) 여도 그동안 모은 sources 는 노출.
+        ref = SourceRef(name='hint.pdf', url='/media/hint')
+        agent_tools.register(_make_evidence_dummy(name='dummy', source_ref=ref))
+        # max_iter 까지 다른 args 로 retrieve 하다가 final_answer 안 함.
+        replies = [
+            f'{{"thought": "{i}", "action": "dummy", "arguments": {{"query": "q{i}"}}}}'
+            for i in range(DEFAULT_MAX_ITERATIONS)
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[], max_iterations=DEFAULT_MAX_ITERATIONS)
+        # max_iter → NOT_FOUND 지만 sources 는 그대로.
+        self.assertEqual(r.status, WorkflowStatus.NOT_FOUND)
+        self.assertEqual(len(r.sources), 1)
+        self.assertEqual(r.sources[0].name, 'hint.pdf')
+
+
+class RunAgentDirectPathArgumentsTests(SimpleTestCase):
+    """Phase 8-1: react.py 의 3개 직접 add_observation 경로가 arguments 보존."""
+
+    def setUp(self):
+        self._snapshot = agent_tools._snapshot_for_tests()
+        agent_tools._reset_for_tests()
+        agent_tools.register(_make_dummy_tool())
+
+    def tearDown(self):
+        agent_tools._restore_for_tests(self._snapshot)
+
+    def _patch_llm(self, replies):
+        return patch(
+            'chat.services.agent.react.run_chat_completion',
+            side_effect=_completion(*replies),
+        )
+
+    def test_invalid_json_path_arguments_empty_dict(self):
+        # _llm parse 실패 후 retry 성공 → tool_calls 첫 항목 tool='_llm', args={}.
+        replies = [
+            'not json',
+            '{"thought": "복구", "action": "final_answer", "answer": "ok"}',
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        self.assertGreaterEqual(len(r.tool_calls), 1)
+        first = r.tool_calls[0]
+        self.assertEqual(first.tool, '_llm')
+        self.assertEqual(dict(first.arguments), {})
+
+    def test_invalid_args_path_arguments_empty_dict(self):
+        # arguments 가 문자열이면 invalid_args 분기 → args={} 로 보존.
+        replies = [
+            '{"thought": "잘못", "action": "dummy", "arguments": "not-an-object"}',
+            '{"thought": "복구", "action": "final_answer", "answer": "ok"}',
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        first = r.tool_calls[0]
+        self.assertEqual(first.tool, 'dummy')
+        self.assertEqual(first.failure_kind, 'invalid_args')
+        self.assertEqual(dict(first.arguments), {})
+
+    def test_repeated_call_path_preserves_attempted_arguments(self):
+        # 동일 args 두 번째 시도가 차단되더라도 시도한 args 가 trace 에 박혀있어야 함.
+        same = '{"thought": "rep", "action": "dummy", "arguments": {"query": "x"}}'
+        replies = [
+            same, same,
+            '{"thought": "끝", "action": "final_answer", "answer": "ok"}',
+        ]
+        with patch('chat.services.agent.prompts.load_prompt', return_value='[STUB]'), \
+                patch('chat.services.agent.react.record_token_usage'), \
+                self._patch_llm(replies):
+            r = react.run_agent('Q', history=[])
+        # 두 번째 호출은 차단된 step → repeated_call.
+        blocked = [t for t in r.tool_calls if t.failure_kind == 'repeated_call']
+        self.assertEqual(len(blocked), 1)
+        self.assertEqual(dict(blocked[0].arguments), {'query': 'x'})

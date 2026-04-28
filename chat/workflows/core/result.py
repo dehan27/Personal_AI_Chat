@@ -1,14 +1,18 @@
-"""Workflow 공용 반환 타입 (Phase 5).
+"""Workflow 공용 반환 타입 (Phase 5; Phase 8-1 BaseResult 추출).
 
 이 모듈은 **타입만** 정의한다. 다른 core 모듈을 import 하지 않는다
 (순환 방지 · 의존 방향 통제).
 
-두 가지 반환 타입이 있다:
+세 가지 타입이 있다:
 
 - `ValidationResult` — 입력 정규화·검증 단계의 결과. workflow 내부에서만 쓰이고
   사용자에게 직접 노출되지 않는다.
+- `BaseResult` (Phase 8-1) — 도메인 결과 (`WorkflowResult`, `AgentResult` 등) 가
+  공유하는 Protocol. 공통 필드 (`status`, `value`, `details`) 만 명시. structural
+  typing 으로 implement — 새 도메인 결과를 만들 때 inheritance 강제 안 함.
 - `WorkflowResult` — 도메인 workflow 가 최종적으로 돌려주는 결과. response
-  layer 가 이것을 사용자 문자열로 변환한다.
+  layer 가 이것을 사용자 문자열로 변환한다. `BaseResult` 를 implement 하지만
+  public 시그니처 / 팩토리 / 필드 변경 없음 (8-1 회귀 0 우선).
 
 설계 원칙 (Phase 5 §2):
 - 불변(`frozen=True`) → 합성·로그 안전
@@ -21,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Mapping, Tuple
+from typing import Any, Mapping, Protocol, Tuple, runtime_checkable
 
 
 _EMPTY_DETAILS: Mapping[str, Any] = MappingProxyType({})
@@ -89,6 +93,32 @@ class WorkflowStatus(str, Enum):
     UNSUPPORTED = 'unsupported'
     NOT_FOUND = 'not_found'
     UPSTREAM_ERROR = 'upstream_error'
+
+
+# ---------------------------------------------------------------------------
+# BaseResult — 도메인 결과 공통 Protocol (Phase 8-1)
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class BaseResult(Protocol):
+    """도메인 결과 (`WorkflowResult`, `AgentResult` 등) 가 공유하는 구조.
+
+    structural typing — 명시적 inheritance 없이 같은 필드를 가지면 implement 로
+    인정. 도메인 결과를 새로 만들 때 강제 base class 가 없어 가벼움.
+
+    공통 필드:
+    - `status: WorkflowStatus` — 결과 상태 (OK / NOT_FOUND / UPSTREAM_ERROR 등).
+    - `value: Any` — 핵심 계산값. 실패 상태에선 보통 None.
+    - `details: Mapping[str, Any]` — 중간 근거 / 메타 (read-only dict).
+
+    reply layer 는 이 Protocol 을 import 하지 않고 각 도메인의 reply 모듈이
+    구체 타입 (`WorkflowResult` / `AgentResult`) 을 직접 받는다 — Protocol 은
+    어휘 공유 / 후속 확장 용도 (Phase 8-1 plan §1 참고).
+    """
+
+    status: WorkflowStatus
+    value: Any
+    details: Mapping[str, Any]
 
 
 @dataclass(frozen=True)

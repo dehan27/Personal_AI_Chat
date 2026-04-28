@@ -1,4 +1,4 @@
-"""Agent `WorkflowResult` → 사용자 reply 문자열 (Phase 7-2).
+"""Agent 결과 → 사용자 reply 문자열 (Phase 7-2; Phase 8-1 BaseResult 도입).
 
 Phase 7-1 의 `to_workflow_result` 가 ReAct 종료 사유를 세 status 중 하나로
 축약했으므로, 본 모듈은 그 셋만 다룬다:
@@ -12,6 +12,10 @@ status 다 (`chat/services/agent/result.py` 의 매핑 표 참고). 도달하면
 status 어휘 regression 이라 보고 `ValueError` 로 fail-fast — 친절히 잡지 않는 것이
 의도. (Plan §5-1 의 invariant guard 정책.)
 
+Phase 8-1: 입력 타입을 `BaseResult` Protocol 로 좁힘. `status / value / details` 만
+구조적으로 매치하면 받아 — `AgentResult` (1급 시민) 와 `WorkflowResult` (호환 어댑터
+용) 모두 통과. reply 단의 의미는 동일.
+
 `chat/workflows/domains/reply.py` 와 합치지 않은 이유: workflow reply 는
 `workflow_key` 별 OK 포맷터 분기가 본질이지만, agent 는 key 가 없고 status 도
 세 종류로 좁다. 한 모듈에 끼우면 분기 hack 이 늘어 가독성이 깨진다.
@@ -19,7 +23,7 @@ status 어휘 regression 이라 보고 `ValueError` 로 fail-fast — 친절히 
 
 from __future__ import annotations
 
-from chat.workflows.core import WorkflowResult, WorkflowStatus
+from chat.workflows.core import BaseResult, WorkflowStatus
 
 
 # Phase 7-1 result.py 의 _DEFAULT_REASONS 가 이미 한국어 카피를 details['reason']
@@ -34,8 +38,8 @@ _DEFAULT_UPSTREAM_ERROR_REPLY = (
 )
 
 
-def build_reply_from_agent_result(result: WorkflowResult) -> str:
-    """`WorkflowResult` 를 사용자 응답 문자열로 변환.
+def build_reply_from_agent_result(result: BaseResult) -> str:
+    """`AgentResult` / `WorkflowResult` (BaseResult Protocol) 을 사용자 응답 문자열로 변환.
 
     agent 가 만들 수 있는 세 status 만 처리한다. 그 외 status 는 runtime 의
     invariant 위반이므로 ValueError 로 가시화한다 — Plan §5-1.

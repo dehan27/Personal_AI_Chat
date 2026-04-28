@@ -103,3 +103,56 @@ class WorkflowResultTests(SimpleTestCase):
         self.assertEqual(WorkflowStatus.OK.value, 'ok')
         self.assertEqual(f'{WorkflowStatus.OK}', 'WorkflowStatus.OK')  # enum repr
         self.assertEqual(str(WorkflowStatus.OK.value), 'ok')
+
+
+# ---------------------------------------------------------------------------
+# Phase 8-1: BaseResult Protocol 도입 회귀 가드
+# ---------------------------------------------------------------------------
+
+
+class WorkflowResultBackwardCompatTests(SimpleTestCase):
+    """Phase 8-1: BaseResult 추출 후 WorkflowResult public contract 변경 0 검증.
+
+    외부 호출부 (~50 곳 단위 테스트 포함) 한 줄도 안 바뀜을 보장하는 회귀 가드.
+    """
+
+    def test_workflow_result_dataclass_fields_unchanged(self):
+        # 기존 5 필드 그대로 — 추가/제거 없음.
+        from dataclasses import fields
+        names = {f.name for f in fields(WorkflowResult)}
+        self.assertEqual(
+            names,
+            {'status', 'value', 'details', 'missing_fields', 'warnings'},
+        )
+
+    def test_workflow_result_factory_signatures_unchanged(self):
+        # 6 팩토리 모두 호출 가능 + 반환 타입 그대로.
+        self.assertIsInstance(WorkflowResult.ok(1), WorkflowResult)
+        self.assertIsInstance(WorkflowResult.missing_input(['a']), WorkflowResult)
+        self.assertIsInstance(WorkflowResult.invalid_input(['e']), WorkflowResult)
+        self.assertIsInstance(WorkflowResult.unsupported('r'), WorkflowResult)
+        self.assertIsInstance(WorkflowResult.not_found('r'), WorkflowResult)
+        self.assertIsInstance(WorkflowResult.upstream_error('r'), WorkflowResult)
+
+    def test_workflow_status_enum_values_unchanged(self):
+        # 6 enum 값 변경 0 — DB 저장 / JSON 직렬화 호환 유지.
+        self.assertEqual(
+            {s.value for s in WorkflowStatus},
+            {'ok', 'missing_input', 'invalid_input', 'unsupported',
+             'not_found', 'upstream_error'},
+        )
+
+
+class BaseResultProtocolTests(SimpleTestCase):
+    """Phase 8-1: BaseResult Protocol structural typing 검증."""
+
+    def test_workflow_result_satisfies_base_result_protocol(self):
+        from chat.workflows.core.result import BaseResult
+        r = WorkflowResult.ok(42)
+        # runtime_checkable Protocol — isinstance check.
+        self.assertIsInstance(r, BaseResult)
+
+    def test_protocol_imports_from_core_package(self):
+        # __init__.py 에 export 됐는지.
+        from chat.workflows.core import BaseResult as BR
+        self.assertIsNotNone(BR)
