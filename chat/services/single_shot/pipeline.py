@@ -26,6 +26,10 @@ from chat.services.single_shot.prompting import build_single_shot_messages
 from chat.services.single_shot.qa_cache import find_canonical_qa, resolve_cache_hit
 from chat.services.single_shot.retrieval import retrieve_documents
 from chat.services.single_shot.types import QueryResult
+from chat.services.token_purpose import (
+    PURPOSE_QUERY_REWRITER,
+    PURPOSE_SINGLE_SHOT_ANSWER,
+)
 
 
 def run_single_shot(
@@ -47,7 +51,10 @@ def run_single_shot(
     # 재작성 호출이 실제로 일어났다면 본 LLM 호출과 구분해 별도 레코드로 남긴다.
     # 재작성 실패 / history 빈 경로에서는 usage 가 None 이라 기록하지 않는다.
     if rewriter_usage is not None and rewriter_model is not None:
-        record_token_usage(rewriter_model, rewriter_usage)
+        record_token_usage(
+            rewriter_model, rewriter_usage,
+            purpose=PURPOSE_QUERY_REWRITER,
+        )
 
     # 1~2) 자료 후보 검색 + 재정렬
     chunk_hits = retrieve_documents(search_query)
@@ -67,7 +74,7 @@ def run_single_shot(
     reply, usage, model = run_chat_completion(messages)
 
     # 7) 후처리: 토큰 기록 → 응답 분류 → sources/ChatLog 구성
-    record_token_usage(model, usage)
+    record_token_usage(model, usage, purpose=PURPOSE_SINGLE_SHOT_ANSWER)
 
     is_no_info, is_casual = classify_reply(reply)
 

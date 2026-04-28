@@ -26,6 +26,10 @@ from chat.graph.nodes.single_shot import single_shot_node
 from chat.services.query_rewriter import rewrite_query_with_history
 from chat.services.single_shot.postprocess import record_token_usage
 from chat.services.single_shot.types import QueryResult
+from chat.services.token_purpose import (
+    PURPOSE_QUERY_REWRITER,
+    PURPOSE_WORKFLOW_EXTRACTOR,
+)
 from chat.services.workflow_input_extractor import extract as extract_workflow_input
 from chat.workflows.domains import dispatch, registry
 from chat.workflows.domains.field_spec import FieldSpec
@@ -62,7 +66,10 @@ def workflow_node(state: GraphState) -> dict:
                 raw_question, history,
             )
             if rw_usage and rw_model:
-                record_token_usage(rw_model, rw_usage)
+                record_token_usage(
+                    rw_model, rw_usage,
+                    purpose=PURPOSE_QUERY_REWRITER,
+                )
 
         workflow_input, ex_usage, ex_model = extract_workflow_input(
             question=effective_question,
@@ -70,7 +77,10 @@ def workflow_node(state: GraphState) -> dict:
             schema=entry.input_schema,
         )
         if ex_usage and ex_model:
-            record_token_usage(ex_model, ex_usage)
+            record_token_usage(
+                ex_model, ex_usage,
+                purpose=PURPOSE_WORKFLOW_EXTRACTOR,
+            )
 
     result = dispatch.run(key, workflow_input)
     reply = build_reply_from_result(result, workflow_key=key)
